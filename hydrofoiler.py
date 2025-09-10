@@ -79,6 +79,8 @@ class Hydrofoiler:
                 if self.state in self.AVAILABLE_ENVIRONMENTS:
                     if event.key == pygame.K_u:
                         self.uiManager.toggleHiddenUI()
+                    if event.key == pygame.K_z:
+                        self.uiManager.toggleDebugReadouts()
                     elif event.key == pygame.K_ESCAPE:
                         self.state = "menu"
                         if self.state == "tunnel":
@@ -200,8 +202,8 @@ class Hydrofoiler:
                     self.pilot = None
                     self.state = "menu"
             elif self.state == "air":
-                deltaX, deltaZ = self.uiManager.getAirParams()
-                self.air.updateSize(deltaX, deltaZ)
+                deltaX, deltaZ, enginePower, deltaRotation, rotationMin, rotationMax = self.uiManager.getAirParams()
+                self.air.updateModifiableParameters(deltaX, deltaZ, enginePower, deltaRotation, rotationMin, rotationMax)
                 self.air.advanceTime()
                 if not self.air.running:
                     logging.info("Air simulation ended, returning to menu")
@@ -209,8 +211,8 @@ class Hydrofoiler:
                     self.air = None
                     self.state = "menu"
             elif self.state == "space":
-                deltaX, deltaZ = self.uiManager.getSpaceParams()
-                self.space.updateSize(deltaX, deltaZ)
+                deltaX, deltaZ, enginePower, deltaRotation, rotationMin, rotationMax = self.uiManager.getSpaceParams()
+                self.space.updateModifiableParameters(deltaX, deltaZ, enginePower, deltaRotation, rotationMin, rotationMax)
                 self.space.advanceTime()
                 if not self.space.running:
                     logging.info("Space simulation ended, returning to menu")

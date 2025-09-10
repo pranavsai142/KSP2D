@@ -1,6 +1,7 @@
 import pygame
 import numpy as np
 import math
+import random
 
 class UIManager:
     def __init__(self, windowWidth, windowHeight):
@@ -15,6 +16,10 @@ class UIManager:
         self.digitWindowColor = (30, 30, 30)
         self.orientBgColor = (200, 200, 200, 128)
         self.hiddenUIShown = False
+        self.debugReadoutsShown = False
+        self.debugHistory = {}
+        self.debugSurface = None
+        self.stars = []
         self.tunnelParams = {
             "velocity": 10.0,  # Maximum velocity
             "alpha": 0.0,     # Angle of attack
@@ -30,12 +35,20 @@ class UIManager:
             "deltaZ": 100.0
         }
         self.airParams = {
-            "deltaX": 100.0,
-            "deltaZ": 100.0
+            "deltaX": 100000.0,
+            "deltaZ": 2000.0,
+            "enginePower": 2000,
+            "deltaRotation": 0.1,
+            "rotationMin": -45,
+            "rotationMax": 45,
         }
         self.spaceParams = {
-            "deltaX": 100.0,
-            "deltaZ": 100.0
+            "deltaX": 1000.0,
+            "deltaZ": 10000.0,
+            "enginePower": 2000,
+            "deltaRotation": 0.1,
+            "rotationMin": -45,
+            "rotationMax": 45,
         }
         self.uiElements = []
         self.environment = None
@@ -88,8 +101,12 @@ class UIManager:
                     y += spacing
             elif self.environment == "air":
                 fields = [
-                    ("ΔX:", str(self.oceanParams["deltaX"]), "deltaX"),
-                    ("ΔZ:", str(self.oceanParams["deltaZ"]), "deltaZ")
+                    ("ΔX:", str(self.airParams["deltaX"]), "deltaX"),
+                    ("ΔZ:", str(self.airParams["deltaZ"]), "deltaZ"),
+                    ("Pwr:", str(self.airParams["enginePower"]), "enginePower"),
+                    ("Δθ:", str(self.airParams["deltaRotation"]), "deltaRotation"),
+                    ("- θ:", str(self.airParams["rotationMin"]), "rotationMin"),
+                    ("+θ:", str(self.airParams["rotationMax"]), "rotationMax")
                 ]
                 for label, value, key in fields:
                     rect = pygame.Rect(self.uiPanelRect.x + 10, y, 150, 25)
@@ -97,8 +114,12 @@ class UIManager:
                     y += spacing
             elif self.environment == "space":
                 fields = [
-                    ("ΔX:", str(self.oceanParams["deltaX"]), "deltaX"),
-                    ("ΔZ:", str(self.oceanParams["deltaZ"]), "deltaZ")
+                    ("ΔX:", str(self.spaceParams["deltaX"]), "deltaX"),
+                    ("ΔZ:", str(self.spaceParams["deltaZ"]), "deltaZ"),
+                    ("Pwr:", str(self.spaceParams["enginePower"]), "enginePower"),
+                    ("Δθ:", str(self.spaceParams["deltaRotation"]), "deltaRotation"),
+                    ("- θ:", str(self.spaceParams["rotationMin"]), "rotationMin"),
+                    ("+θ:", str(self.spaceParams["rotationMax"]), "rotationMax")
                 ]
                 for label, value, key in fields:
                     rect = pygame.Rect(self.uiPanelRect.x + 10, y, 150, 25)
@@ -111,10 +132,12 @@ class UIManager:
         self.windowHeight = windowHeight
         self.readoutWidth = windowWidth // 6
         self.readoutHeight = windowHeight
-        self.readoutPos = (windowWidth - self.readoutWidth, 0)
+        debug_width = 410 if self.debugReadoutsShown else 0
+        self.readoutPos = (windowWidth - self.readoutWidth, 0)  # Keep readout on right
         self.digitWidth = (self.readoutWidth - 60) // 4
-        self.uiPanelRect = pygame.Rect(50, 50, 300, 400)
+        self.uiPanelRect = pygame.Rect(450, 50, 300, 400)  # Move UI panel to avoid overlap with debug
         self.uiElements = self._createUIElements()
+        self.stars = []
 
     def resize(self, size):
         self._updateDimensions(*size)
@@ -144,7 +167,15 @@ class UIManager:
     def toggleHiddenUI(self):
         self.hiddenUIShown = not self.hiddenUIShown
         self.uiElements = self._createUIElements()
-
+        
+    def toggleDebugReadouts(self):
+        self.debugReadoutsShown = not self.debugReadoutsShown
+        if self.debugReadoutsShown:
+            self.debugSurface = pygame.Surface((400, 720), pygame.SRCALPHA)  # Initialize with correct size
+        else:
+            self.debugSurface = None
+        self._updateDimensions(self.windowWidth, self.windowHeight)
+        
     def handleClick(self, pos):
         x, y = pos
         for element in self.uiElements:
@@ -212,11 +243,11 @@ class UIManager:
         return self.pilotParams["deltaX"], self.pilotParams["deltaZ"]
     
     def getAirParams(self):
-        return self.airParams["deltaX"], self.airParams["deltaZ"]
+        return self.airParams["deltaX"], self.airParams["deltaZ"], self.airParams["enginePower"], self.airParams["deltaRotation"], self.airParams["rotationMin"], self.airParams["rotationMax"]
         
     def getSpaceParams(self):
-        return self.spaceParams["deltaX"], self.spaceParams["deltaZ"]
-
+        return self.spaceParams["deltaX"], self.spaceParams["deltaZ"], self.spaceParams["enginePower"], self.spaceParams["deltaRotation"], self.spaceParams["rotationMin"], self.spaceParams["rotationMax"]
+    
     def renderShopUI(self, shop):
         pass
 
@@ -224,6 +255,12 @@ class UIManager:
         self.environment = envType
         self.frameNumber = environmentObj.frameNumber
         self._renderReadoutView(environmentObj, self.screen)
+        if self.debugReadoutsShown:
+            self.debugSurface = pygame.Surface((400, 720), pygame.SRCALPHA)  # Match _renderDebugSurface size
+            self._renderDebugSurface(environmentObj, self.debugSurface)
+            blit_pos = (10, max(0, (self.windowHeight - 720) // 2 - 20))  # Center left, adjusted up
+#             print(f"Blit pos: {blit_pos}, Window size: ({self.windowWidth}, {self.windowHeight})")
+            self.screen.blit(self.debugSurface, blit_pos)
         if self.hiddenUIShown:
             pygame.draw.rect(self.screen, self.orientBgColor, self.uiPanelRect, border_radius=5)
             smallFont = pygame.font.SysFont("ocraextended", 20, bold=False)
@@ -248,17 +285,233 @@ class UIManager:
                     label = smallFont.render(element["label"], True, self.textColor)
                     self.screen.blit(label, (element["rect"].x - 50, element["rect"].y + 5))
 
+    def _renderDebugSurface(self, environmentObj, surface):
+        # Use a surface height of 720 to fit all content
+        if surface is None or surface.get_size() != (400, 720):
+            surface = pygame.Surface((400, 720), pygame.SRCALPHA)
+        surface.fill((50, 50, 50))  # Dark gray background
+        pygame.draw.rect(surface, (255, 255, 255), (0, 0, 400, 720), 2)  # White border
+        self.debugSurface = surface
+    
+        if len(environmentObj.objects) == 0:
+            text = pygame.font.SysFont("courier", 14).render("No objects", True, (255, 255, 255))
+            surface.blit(text, (10, 10))
+            return
+    
+        obj = environmentObj.objects[0]
+        obj_id = id(obj)
+        if obj_id not in self.debugHistory:
+            self.debugHistory[obj_id] = {
+                'position': [], 'velocity': [], 'acceleration': [], 'airspeed_body': [],
+                'orientation': [], 'rotAngle': [], 'aoa': [], 'throttle': [], 'thrust': [],
+                'force': [], 'lift': [], 'drag': [], 'addedMass': []
+            }
+        history = self.debugHistory[obj_id]
+        max_history = 100
+    
+        # Update history
+        pos = tuple(obj.positionVector)
+        history['position'].append(pos)
+        vel = tuple(obj.velocityVector)
+        history['velocity'].append(vel)
+        acc = tuple(obj.accelerationVector)
+        history['acceleration'].append(acc)
+    
+        orient = np.array(obj.orientationVector, dtype=float)
+        history['orientation'].append(tuple(orient))
+    
+        # Compute rotAngle
+        refVector = np.array([0, -1], dtype=float)
+        normOrient = np.linalg.norm(orient)
+        normRef = np.linalg.norm(refVector)
+        rotAngle = 0.0
+        if normOrient > 0 and normRef > 0:
+            cosTheta = np.dot(orient, refVector) / (normOrient * normRef)
+            cosTheta = np.clip(cosTheta, -1.0, 1.0)
+            rotAngle = math.degrees(math.acos(cosTheta))
+            cross = orient[0] * refVector[1] - orient[1] * refVector[0]
+            if cross < 0:
+                rotAngle = -rotAngle
+            rotAngle = ((rotAngle + 180) % 360) - 180
+        history['rotAngle'].append(rotAngle)
+    
+        # Compute aoa
+        vel_arr = np.array(obj.velocityVector, dtype=float)
+        normVel = np.linalg.norm(vel_arr)
+        aoa = 0.0
+        if normOrient > 0 and normVel > 0:
+            orientNorm = orient / normOrient
+            velNorm = vel_arr / normVel
+            cosTheta = np.dot(orientNorm, velNorm)
+            cosTheta = np.clip(cosTheta, -1.0, 1.0)
+            aoa = math.degrees(math.acos(cosTheta))
+            cross = orientNorm[0] * velNorm[1] - orientNorm[1] * velNorm[0]
+            if cross < 0:
+                aoa = -aoa
+            aoa = ((aoa + 180) % 360) - 180
+            key = f"{obj_id}_AoA"
+            if key in self.prevAoa:
+                aoa = self.prevAoa[key] + self.smoothingFactor * (aoa - self.prevAoa[key])
+            self.prevAoa[key] = aoa
+        history['aoa'].append(aoa)
+    
+        # Airspeed body
+        body_airspeed = 0.0
+        if normOrient > 0:
+            body_airspeed = np.dot(vel_arr, orient / normOrient)
+        history['airspeed_body'].append(body_airspeed)
+    
+        # Throttle
+        throttle = obj.engineThrottle * 100 if obj.engineThrottle <= 1.0 else obj.engineThrottle
+        history['throttle'].append(throttle)
+    
+        # Thrust
+        thrust = tuple(obj.thrustForce)
+        history['thrust'].append(thrust)
+    
+        # Force
+        force = tuple(obj.forceVector)
+        history['force'].append(force)
+    
+        # Lift and Drag
+        thrust_arr = np.array(obj.thrustForce)
+        force_arr = np.array(obj.forceVector)
+        aero = force_arr - thrust_arr
+        drag = 0.0
+        lift_signed = 0.0
+        if normOrient > 0:
+            orient_norm = orient / normOrient
+            drag = np.dot(aero, orient_norm)
+            perp = np.array([-orient_norm[1], orient_norm[0]])
+            lift_signed = np.dot(aero, perp)
+        history['drag'].append(drag)
+        history['lift'].append(lift_signed)
+    
+        # Added mass
+        added = getattr(obj, 'addedMass', 0.0)
+        history['addedMass'].append(added)
+    
+        # Trim history
+        for key in history:
+            if len(history[key]) > max_history:
+                history[key].pop(0)
+    
+        # Render to surface
+        font = pygame.font.SysFont("courier", 14)
+        small_font = pygame.font.SysFont("courier", 12)
+    
+        def render_value(label, value, y_pos):
+            text = font.render(f"{label}: {value}", True, (255, 255, 255))
+            surface.blit(text, (10, y_pos))
+            return y_pos + 12  # Reduced spacing
+    
+        def render_graph(hist_key, y_pos, is_vector=False):
+            text = small_font.render(f"Graph: {hist_key}", True, (200, 200, 200))
+            surface.blit(text, (10, y_pos))
+            y_pos += 10  # Reduced spacing
+            graph_rect = pygame.Rect(10, y_pos, 380, 20)  # Reduced graph height
+            pygame.draw.rect(surface, (30, 30, 30), graph_rect)
+            pygame.draw.rect(surface, (100, 100, 100), graph_rect, 1)
+            h = history[hist_key]
+            if len(h) < 2:
+                return y_pos + 25
+            if is_vector:
+                vals = [np.linalg.norm(np.array(v)) for v in h]
+            else:
+                vals = [float(v) for v in h]
+            if not vals:
+                return y_pos + 25
+            minv = min(vals)
+            maxv = max(vals)
+            rangev = maxv - minv if maxv != minv else 1.0
+            graph_w = 380
+            graph_h = 20
+            prev_x = None
+            prev_y = None
+            n = len(vals)
+            for i, v in enumerate(vals):
+                x = 10 + (i / (n - 1)) * graph_w if n > 1 else 10 + graph_w / 2
+                yg = y_pos + graph_h - ((v - minv) / rangev * graph_h)
+                if prev_x is not None:
+                    pygame.draw.line(surface, (0, 255, 0), (prev_x, prev_y), (x, yg), 1)
+                prev_x = x
+                prev_y = yg
+            return y_pos + 25  # Reduced spacing
+    
+        y = 10
+        # Numerical values only for position and orientation
+        y = render_value("Position", f"({pos[0]:.2f}, {pos[1]:.2f})", y)
+        y = render_value("Orientation", f"({orient[0]:.2f}, {orient[1]:.2f})", y)
+        # Other values with graphs
+        y = render_value("Velocity", f"({vel[0]:.2f}, {vel[1]:.2f})", y)
+        y = render_graph('velocity', y, True)
+        y = render_value("Acceleration", f"({acc[0]:.2f}, {acc[1]:.2f})", y)
+        y = render_graph('acceleration', y, True)
+        y = render_value("Airspeed (body)", f"{body_airspeed:.2f}", y)
+        y = render_graph('airspeed_body', y)
+        y = render_value("Rot Angle", f"{rotAngle:.2f} deg", y)
+        y = render_graph('rotAngle', y)
+        y = render_value("AoA", f"{aoa:.2f} deg", y)
+        y = render_graph('aoa', y)
+        y = render_value("Throttle", f"{throttle:.1f}%", y)
+        y = render_graph('throttle', y)
+        y = render_value("Thrust Force", f"({thrust[0]:.2f}, {thrust[1]:.2f})", y)
+        y = render_graph('thrust', y, True)
+        y = render_value("Force Vector", f"({force[0]:.2f}, {force[1]:.2f})", y)
+        y = render_graph('force', y, True)
+        y = render_value("Lift (signed)", f"{lift_signed:.2f}", y)
+        y = render_graph('lift', y)
+        y = render_value("Drag", f"{drag:.2f}", y)
+        y = render_graph('drag', y)
+        y = render_value("Added Mass", f"{added:.2f}", y)
+        y = render_graph('addedMass', y)
+
     def _renderReadoutView(self, environmentObj, surface):
         overlay = pygame.Surface((self.readoutWidth, self.readoutHeight), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 0))
         yPos = self.readoutPos[1] + 10
         if self.environment in ["ocean"]:
             labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "ROT ANG:", "AOA:"]
-        elif self.environment in ["pilot", "air", "space"]:
+        elif self.environment in ["pilot"]:
             labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "THRUST:", "ROT ANG:", "AOA:"]
-        else:
+        elif self.environment in ["air", "space"]:
+            labels = ["SPEED:", "ALT:", "AIRSPD:", "PWR", "AOA:"]
+        else:  # tunnel
             labels = ["VEL X:", "VEL Z:", "ACC X:", "ACC Z:", "ROT ANG:", "AOA:"]
         spacing = (self.readoutHeight - 20) // len(labels)
+        wheel_offset = 5
+        if self.environment in ["air", "space"]:
+            # Altitude indicator
+            if len(environmentObj.objects) > 0:
+                obj = environmentObj.objects[0]
+                deltaZ = self.airParams["deltaZ"] if self.environment == "air" else self.spaceParams["deltaZ"]
+                altitude = obj.positionVector[1]
+                bar_x = 5
+                bar_y = 50
+                bar_width = 25
+                bar_height = self.readoutHeight - 100
+                num_layers = 6
+                layer_h = bar_height / num_layers
+                # Colors: top (space) black to bottom (ground) light blue
+                colors = [(0, 0, 0), (0, 0, 139), (25, 25, 112), (70, 130, 180), (100, 149, 237), (135, 206, 235)]
+                for i in range(num_layers):
+                    col = colors[i]
+                    yy = bar_y + i * layer_h
+                    pygame.draw.rect(overlay, col, (bar_x, yy, bar_width, layer_h))
+                # Stars in top layer (space, i=0)
+                top_y_start = bar_y
+                if len(self.stars) == 0:
+                    for _ in range(15):
+                        self.stars.append((random.randint(0, bar_width), random.randint(0, int(layer_h))))
+                for sx, sy in self.stars:
+                    pygame.draw.circle(overlay, (255, 255, 255), (int(bar_x + sx), int(top_y_start + sy)), 1)
+                # Arrow - base on left edge, pointing right into bar
+                if deltaZ > 0:
+                    arrow_frac = min(max(altitude / deltaZ, 0), 1)
+                    arrow_y = bar_y + bar_height * (1 - arrow_frac)
+                    points = [(bar_x, arrow_y - 5), (bar_x + 10, arrow_y), (bar_x, arrow_y + 5)]
+                    pygame.draw.polygon(overlay, (255, 255, 255), points)
+            wheel_offset = bar_x + bar_width + 20  # Adjust spacing
         for obj in environmentObj.objects:
             if self.environment == "ocean":
                 posX, posZ = obj.positionVector[0], obj.positionVector[1]
@@ -269,16 +522,14 @@ class UIManager:
                 velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
                 thrust = np.linalg.norm(obj.thrustForce)
                 values = [posX, posZ, velX, velZ, thrust]
-            elif self.environment == "air":
+            elif self.environment in ["air", "space"]:
                 posX, posZ = obj.positionVector[0], obj.positionVector[1]
                 velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                thrust = np.linalg.norm(obj.thrustForce)
-                values = [posX, posZ, velX, velZ, thrust]
-            elif self.environment == "space":
-                posX, posZ = obj.positionVector[0], obj.positionVector[1]
-                velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                thrust = np.linalg.norm(obj.thrustForce)
-                values = [posX, posZ, velX, velZ, thrust]
+                ground_speed = abs(velX)
+                altitude = posZ
+                airspeed = np.sqrt(velX**2 + velZ**2)
+                throttle = obj.engineThrottle * 100 if obj.engineThrottle <= 1.0 else obj.engineThrottle
+                values = [ground_speed, altitude, airspeed, throttle]
             elif self.environment == "tunnel":
                 velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
                 accX, accZ = obj.accelerationVector[0], obj.accelerationVector[1]
@@ -301,6 +552,8 @@ class UIManager:
                 rotAngle = ((rotAngle + 180) % 360) - 180
             else:
                 rotAngle = 0.0
+            if self.environment not in ["air", "space"]:
+                values.append(rotAngle)
             vel = np.array(obj.velocityVector, dtype=float)
             normVel = np.linalg.norm(vel)
             normOrient = np.linalg.norm(orient)
@@ -320,7 +573,7 @@ class UIManager:
                 self.prevAoa[key] = aoa
             else:
                 aoa = 0.0
-            values.extend([rotAngle, aoa])
+            values.append(aoa)
             for idx, (label, value) in enumerate(zip(labels, values)):
                 key = f"{id(obj)}_{label}_value"
                 if key not in self.prevValues:
@@ -329,7 +582,7 @@ class UIManager:
                 self.prevValues[key] = smoothedValue
                 value = smoothedValue
                 numDigits = 3
-                if label in ["ROT ANG:", "AOA:"]:
+                if label in ["AOA:"]:
                     maxValue = 180
                     minValue = -180
                     value = max(min(value, maxValue), minValue)
@@ -351,11 +604,11 @@ class UIManager:
                 if key not in self.animationFrames:
                     self.animationFrames[key] = [0] * totalWheels
                 labelText = self.labelFont.render(label, True, self.textColor)
-                labelX = 5
+                labelX = wheel_offset
                 labelY = yPos + 2 - self.readoutPos[1]
                 overlay.blit(labelText, (labelX, labelY))
                 windowY = yPos + 50 - self.readoutPos[1]
-                windowX = 5
+                windowX = wheel_offset
                 windowWidth = self.digitWidth * totalWheels
                 pygame.draw.rect(overlay, self.digitWindowColor, (windowX, windowY, windowWidth, self.digitHeight))
                 if self.environment == "tunnel" and label in ["ACC X:", "ACC Z:"]:
@@ -397,6 +650,36 @@ class UIManager:
                     overlay.set_clip(None)
                 pygame.draw.rect(overlay, self.textColor, (windowX, windowY, windowWidth, self.digitHeight), 1)
                 yPos += spacing
+            # STALL indicator for air/space - bottom center
+            if self.environment in ["air", "space"] and len(environmentObj.objects) > 0:
+                obj = environmentObj.objects[0]
+                vel = np.array(obj.velocityVector, dtype=float)
+                vel_norm = np.linalg.norm(vel)
+                stall = (vel_norm == 0)
+                lift_signed = 0.0
+                if not stall:
+                    orient = np.array(obj.orientationVector, dtype=float)
+                    norm_orient = np.linalg.norm(orient)
+                    if norm_orient > 0:
+                        orient_norm = orient / norm_orient
+                        thrust_arr = np.array(obj.thrustForce)
+                        force_arr = np.array(getattr(obj, 'forceVector', [0, 0]))
+                        aero = force_arr - thrust_arr
+                        perp = np.array([-orient_norm[1], orient_norm[0]])
+                        lift_signed = np.dot(aero, perp)
+                        stall = lift_signed < 0
+                stall_x = (self.readoutWidth - 100) // 2
+                stall_y = self.readoutHeight - 50 - self.readoutPos[1]
+                stall_w = 100
+                stall_h = 30
+                bg_color = (200, 200, 200) if not stall else (255, 0, 0)
+                pygame.draw.rect(overlay, bg_color, (stall_x, stall_y, stall_w, stall_h), border_radius=5)
+                pygame.draw.rect(overlay, (0, 0, 0), (stall_x, stall_y, stall_w, stall_h), width=2, border_radius=5)
+                text_color = (128, 128, 128) if not stall else (255, 255, 255)
+                stall_font = pygame.font.SysFont("courier", 12, bold=True)
+                text = stall_font.render("STALL", True, text_color)
+                tw, th = text.get_size()
+                overlay.blit(text, (stall_x + (stall_w - tw) // 2, stall_y + (stall_h - th) // 2))
         background = pygame.Surface((self.readoutWidth, self.readoutHeight), pygame.SRCALPHA)
         background.fill(self.orientBgColor)
         background.blit(overlay, (0, 0))

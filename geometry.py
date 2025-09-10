@@ -4,13 +4,17 @@ import matplotlib.pyplot as plt
 import os
 
 # Constants (unchanged)
-RHO = 1000
+RHO = 1
 NUM_REFERENCE_ELEMENT_POINTS = 80
 NUM_POINTS_IN_ELEMENT = 3
 NACA_FOIL_RESOLUTION = 0.001
 NACA_0012_FOIL_TYPE = "0012"
 COLOCATION_SCALING_FACTOR_X = 0.995
 COLOCATION_SCALING_FACTOR_Z = 0.95
+STREAMLINED_DRAG_COEFFICIENT = 0.04
+CIRCLE_DRAG_COEFFICIENT = 0.05
+
+APPLY_PARAMETERIZED_DRAG = True
 
 class Geometry:
     def __init__(self, pointXCoords, pointZCoords, colocationXCoords, colocationZCoords, hasTrailingEdge=True):
@@ -22,7 +26,34 @@ class Geometry:
         self.hasTrailingEdge = hasTrailingEdge
         self.generateNormals()
         self.generateReferenceElementData()
+        self.setDragCoefficient()
+        self.setFrontalArea()
+        
+    def setDragCoefficient(self):
+        if(self.hasTrailingEdge):
+            self.dragCoefficient = STREAMLINED_DRAG_COEFFICIENT
+        else:
+            self.dragCoefficient = CIRCLE_DRAG_COEFFICIENT
 
+    def setFrontalArea(self):
+        # Ensure there are enough points to form a polygon
+        if len(self.pointXCoords) < 3 or len(self.pointZCoords) < 3:
+            return 0.0  # Not enough points to form a polygon
+        
+        # Initialize area
+        area = 0.0
+        n = len(self.pointXCoords)
+        
+        # Apply the Shoelace formula
+        for i in range(n):
+            j = (i + 1) % n  # Next vertex (wraps around to 0 for the last point)
+            area += self.pointXCoords[i] * self.pointZCoords[j]
+            area -= self.pointZCoords[i] * self.pointXCoords[j]
+        
+        # Take the absolute value and divide by 2
+        area = abs(area) / 2.0
+        self.frontalArea = area
+            
     # Keep the rest of the methods exactly as provided in the original code
     def generateNormals(self):
         self.normalX = np.zeros(self.numPoints)
@@ -387,6 +418,10 @@ class Geometry:
 
         # Compute force using dynamic pressure
         localForceVector = self.computeForce(localVelocityVector, phi, phiT, tangentialTotalVel)
+        
+        dragForce = self.dragCoefficient * 0.5 * RHO * (localVelocityVector[0]**2 + localVelocityVector[1]**2) * self.frontalArea
+        if(APPLY_PARAMETERIZED_DRAG):
+            localForceVector[1] = localForceVector[1] - dragForce
 
 
         # Store results for rendering

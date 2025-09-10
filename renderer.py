@@ -1,11 +1,13 @@
 import pygame
 import numpy as np
 import math
+import random
 
 class Renderer:
     ZOOM = 0.01
     TUNNEL_ZOOM = 0.01
     SHOW_GLOBAL_FORCE_VECTOR = True
+    GENERATE_CLOUDS = False
 
     def __init__(self, windowWidth=1000, windowHeight=800):
         pygame.init()
@@ -25,6 +27,14 @@ class Renderer:
         self.oceanColor = (0, 100, 255)
         self.groundColor = (139, 69, 19)
         self.orientBgColor = (200, 200, 200, 128)
+        self.atmosphereColors = [
+            (0, 0, 0),        # Top (space)
+            (0, 0, 139),      # Dark blue
+            (25, 25, 112),    # Midnight blue
+            (70, 130, 180),   # Steel blue
+            (100, 149, 237),  # Cornflower blue
+            (135, 206, 235)   # Sky blue (ground)
+        ]
         self.environment = None
         self.environmentObj = None
         self.zoomFactor = 1.0
@@ -33,9 +43,59 @@ class Renderer:
         self.prevSubDomainCenter = [0, 0]
         self.deltaX = 100.0
         self.deltaZ = 100.0
+        self.boulders = []
+        self.clouds = []
+        self.currentEnvironment = None  # Track current environment
+        self.currentDeltaX = None       # Track current deltaX
+        self.currentDeltaZ = None       # Track current deltaZ
         self._updateDimensions(windowWidth, windowHeight)
         self.running = True
         self.firstRender = True
+
+    def _generateGroundAndClouds(self, deltaX, deltaZ):
+        """Generate static boulders and clouds in the environment coordinate system."""
+        self.boulders = []
+        self.clouds = []
+        if self.environment not in ["air", "space"] or not self.GENERATE_CLOUDS:
+            return
+
+        num_boulders = 1000
+        for _ in range(num_boulders):
+            x = random.uniform(-deltaX / 2, deltaX / 2)
+            z = random.uniform(0, -0.1 * deltaZ)
+            radius = random.uniform(0.5, 2.0)
+            color = (
+                random.randint(100, 160),
+                random.randint(50, 100),
+                random.randint(20, 60)
+            )
+            self.boulders.append({"pos": [x, z], "radius": radius, "color": color})
+
+        num_clouds = 5000
+        for _ in range(num_clouds):
+            x = random.uniform(-deltaX / 2, deltaX / 2)
+            z = random.uniform(0.2 * deltaZ, 0.8 * deltaZ)
+            radius = random.uniform(2.0, 5.0)
+            alpha = random.randint(50, 100)
+            self.clouds.append({"pos": [x, z], "radius": radius, "color": (255, 255, 255, alpha)})
+
+    def _getAtmosphereColor(self, altitude, deltaZ):
+        if deltaZ <= 0:
+            return self.atmosphereColors[-1][:3]
+        frac = max(0, min(1, altitude / deltaZ))
+        frac = 1 - frac
+        num_colors = len(self.atmosphereColors)
+        index = frac * (num_colors - 1)
+        i = int(index)
+        t = index - i
+        if i >= num_colors - 1:
+            return self.atmosphereColors[-1][:3]
+        c1 = self.atmosphereColors[i]
+        c2 = self.atmosphereColors[i + 1]
+        r = int(c1[0] + (c2[0] - c1[0]) * t)
+        g = int(c1[1] + (c2[1] - c1[1]) * t)
+        b = int(c1[2] + (c2[2] - c1[2]) * t)
+        return (r, g, b)
 
     def _computeGeometryZoom(self, environmentObj):
         maxSize = 0
@@ -62,6 +122,7 @@ class Renderer:
         self.minimapPos = (0, 0)
         self.minimapScaleX = self.minimapWidth / self.deltaX if self.deltaX else 1.0
         self.minimapScaleZ = self.minimapHeight / self.deltaZ if self.deltaZ else 1.0
+        # Do not regenerate boulders/clouds here to avoid resetting positions
 
     def resize(self, size):
         self.windowWidth, self.windowHeight = size
@@ -119,16 +180,34 @@ class Renderer:
         else:
             self.deltaX = 100.0
             self.deltaZ = 100.0
+
+        # Generate boulders/clouds only if environment or deltaX/deltaZ changes
+        if (self.environment != self.currentEnvironment or 
+            self.deltaX != self.currentDeltaX or 
+            self.deltaZ != self.currentDeltaZ):
+            if self.environment in ["air", "space"]:
+                self._generateGroundAndClouds(self.deltaX, self.deltaZ)
+            else:
+                self.boulders = []
+                self.clouds = []
+            self.currentEnvironment = self.environment
+            self.currentDeltaX = self.deltaX
+            self.currentDeltaZ = self.deltaZ
+
         self.minimapScaleX = self.minimapWidth / self.deltaX if self.deltaX else 1.0
         self.minimapScaleZ = self.minimapHeight / self.deltaZ if self.deltaZ else 1.0
         self.prevSubDomainCenter = self._computeSubDomainCenter(environmentObj)
         if self.firstRender:
-            # On first render, center the view on the object
             self.zoomFactor = 1.0
             self.globalOffsetX = 0.0
             self.globalOffsetZ = 0.0
             self.firstRender = False
         self.updateViewParameters()
+        if self.environment in ["air", "space"] and environmentObj.objects:
+            altitude = environmentObj.objects[0].positionVector[1]
+            self.bgColor = self._getAtmosphereColor(altitude, self.deltaZ)
+        else:
+            self.bgColor = (255, 255, 255)
         self.screen.fill(self.bgColor)
         self._renderGlobalView(environmentObj, self.screen)
         self._renderOrientationView(environmentObj, self.screen)
@@ -145,15 +224,19 @@ class Renderer:
             self.zoomFactor = 1e-6
         self.scaleX = self.globalWidth / self.subDomainSizeX
         self.scaleZ = self.globalHeight / self.subDomainSizeZ
-    
+
     def _toScreenCoords(self, x, z, isGlobalView=False, isOrientView=False, isMinimapView=False, 
-                        orientCenter=None, orientScale=None, subDomainCenter=None):
+                        orientCenter=None, orientScale=None, subDomainCenter=None, isStatic=False):
         if isGlobalView:
-            if subDomainCenter is not None:
-                x = x - subDomainCenter[0]
-                z = z - subDomainCenter[1]
-            x = (x + self.globalOffsetX) * self.scaleX + self.globalPos[0] + self.globalWidth / 2
-            z = -(z + self.globalOffsetZ) * self.scaleZ + self.globalPos[1] + self.globalHeight / 2
+            if isStatic:
+                x = (x + self.globalOffsetX) * self.scaleX + self.globalPos[0] + self.globalWidth / 2
+                z = -(z + self.globalOffsetZ) * self.scaleZ + self.globalPos[1] + self.globalHeight / 2
+            else:
+                if subDomainCenter is not None:
+                    x = x - subDomainCenter[0]
+                    z = z - subDomainCenter[1]
+                x = (x + self.globalOffsetX) * self.scaleX + self.globalPos[0] + self.globalWidth / 2
+                z = -(z + self.globalOffsetZ) * self.scaleZ + self.globalPos[1] + self.globalHeight / 2
         elif isOrientView:
             x = (x - orientCenter[0]) * orientScale + self.orientPos[0] + self.orientWidth / 2
             z = -(z - orientCenter[1]) * orientScale + self.orientPos[1] + self.orientHeight / 2
@@ -165,10 +248,9 @@ class Renderer:
                 screenZ = ((0 - z) / self.deltaZ) * self.minimapHeight + self.minimapPos[1]
             else:  # air, space
                 x = max(-self.deltaX/2, min(self.deltaX/2, x))
-                z = max(-self.deltaZ/2, min(self.deltaZ/2, z))
+                z = max(0, min(self.deltaZ, z))
                 screenX = ((x + self.deltaX/2) / self.deltaX) * self.minimapWidth + self.minimapPos[0]
-                # Fix z-axis: map z from [-deltaZ/2, deltaZ/2] to [minimapHeight, 0]
-                screenZ = ((self.deltaZ/2 - z) / self.deltaZ) * self.minimapHeight + self.minimapPos[1]
+                screenZ = ((self.deltaZ - z) / self.deltaZ) * self.minimapHeight + self.minimapPos[1]
             return (screenX, screenZ)
         return (x, z)
 
@@ -203,12 +285,31 @@ class Renderer:
             z_bound_min, z_bound_max = -self.deltaZ, 0
         elif self.environment in ["air", "space"]:
             x_bound_min, x_bound_max = -self.deltaX/2, self.deltaX/2
-            z_bound_min, z_bound_max = -self.deltaZ/2, self.deltaZ/2
+            z_bound_min, z_bound_max = 0, self.deltaZ
         else:  # tunnel
             x_bound_min, x_bound_max = -0.5, 0.5
             z_bound_min, z_bound_max = -0.5, 0.5
 
-        # Draw boundary lines
+        if self.environment in ["air", "space"]:
+            left = self._toScreenCoords(max(xMin, x_bound_min), 0, isGlobalView=True, subDomainCenter=subDomainCenter)
+            right = self._toScreenCoords(min(xMax, x_bound_max), 0, isGlobalView=True, subDomainCenter=subDomainCenter)
+            ground_rect = pygame.Rect(left[0], left[1], right[0] - left[0], self.globalHeight - left[1])
+            pygame.draw.rect(surface, self.groundColor, ground_rect)
+            for boulder in self.boulders:
+                x, z = boulder["pos"]
+                screenPos = self._toScreenCoords(x, z, isGlobalView=True, isStatic=True)
+                radius = boulder["radius"] * self.scaleX
+                if 0 <= screenPos[0] <= self.globalWidth and 0 <= screenPos[1] <= self.globalHeight:
+                    pygame.draw.circle(surface, boulder["color"], screenPos, max(3, radius))
+            for cloud in self.clouds:
+                x, z = cloud["pos"]
+                screenPos = self._toScreenCoords(x, z, isGlobalView=True, isStatic=True)
+                radius = cloud["radius"] * self.scaleX
+                if 0 <= screenPos[0] <= self.globalWidth and 0 <= screenPos[1] <= self.globalHeight:
+                    cloud_surface = pygame.Surface((int(radius * 2), int(radius * 2)), pygame.SRCALPHA)
+                    pygame.draw.circle(cloud_surface, cloud["color"], (radius, radius), radius)
+                    surface.blit(cloud_surface, (screenPos[0] - radius, screenPos[1] - radius))
+
         if xMin <= x_bound_max <= xMax:
             top = self._toScreenCoords(x_bound_max, max(zMin, z_bound_min), isGlobalView=True, subDomainCenter=subDomainCenter)
             bottom = self._toScreenCoords(x_bound_max, min(zMax, z_bound_max), isGlobalView=True, subDomainCenter=subDomainCenter)
@@ -377,25 +478,40 @@ class Renderer:
             pygame.draw.line(overlay, self.oceanColor, (self.minimapWidth, 0), (self.minimapWidth, self.minimapHeight), 2)
         for obj in environmentObj.objects:
             for x, z in zip(obj.geometry.pointXCoords, obj.geometry.pointZCoords):
+                if x == 0 and z == 0:
+                    continue
                 screenPos = self._toScreenCoords(x, z, isMinimapView=True)
-                pygame.draw.circle(overlay, self.pointColor, screenPos, 1)
+                if (0 <= screenPos[0] <= self.minimapWidth and 
+                    0 <= screenPos[1] <= self.minimapHeight):
+                    pygame.draw.circle(overlay, self.pointColor, screenPos, 1)
             for element in obj.geometry.connectionMatrix:
                 x1, z1 = obj.geometry.pointXCoords[element[0]], obj.geometry.pointZCoords[element[0]]
                 x2, z2 = obj.geometry.pointXCoords[element[1]], obj.geometry.pointZCoords[element[1]]
+                if (x1 == 0 and z1 == 0) or (x2 == 0 and z2 == 0):
+                    continue
                 start = self._toScreenCoords(x1, z1, isMinimapView=True)
                 end = self._toScreenCoords(x2, z2, isMinimapView=True)
                 pygame.draw.line(overlay, self.lineColor, start, end, 1)
             if hasattr(environmentObj, 'pathHistory'):
                 for pos in environmentObj.pathHistory:
+                    if pos[0] == 0 and pos[1] == 0:
+                        continue
                     screenPos = self._toScreenCoords(pos[0], pos[1], isMinimapView=True)
-                    pygame.draw.circle(overlay, (255, 0, 0), screenPos, 1)
+                    if (0 <= screenPos[0] <= self.minimapWidth and 
+                        0 <= screenPos[1] <= self.minimapHeight):
+                        pygame.draw.circle(overlay, (255, 0, 0), screenPos, 1)
             markerPos = self._toScreenCoords(obj.positionVector[0], obj.positionVector[1], isMinimapView=True)
-            pygame.draw.circle(overlay, (255, 105, 180), markerPos, 3)
+            if (0 <= markerPos[0] <= self.minimapWidth and 
+                0 <= markerPos[1] <= self.minimapHeight and 
+                not (obj.positionVector[0] == 0 and obj.positionVector[1] == 0)):
+                pygame.draw.circle(overlay, (255, 105, 180), markerPos, 3)
         if self.environment == "pilot":
             for asteroid in environmentObj.asteroids:
                 screenPos = self._toScreenCoords(asteroid["pos"][0], asteroid["pos"][1], isMinimapView=True)
-                radius = asteroid["radius"] * (self.minimapWidth / self.deltaX)
-                pygame.draw.circle(overlay, self.asteroidColor, screenPos, max(2, radius))
+                if (0 <= screenPos[0] <= self.minimapWidth and 
+                    0 <= screenPos[1] <= self.minimapHeight):
+                    radius = asteroid["radius"] * (self.minimapWidth / self.deltaX)
+                    pygame.draw.circle(overlay, self.asteroidColor, screenPos, max(2, radius))
         surface.blit(overlay, self.minimapPos)
 
     def quit(self):

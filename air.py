@@ -13,10 +13,13 @@ GRAVITY_VECTOR = np.array([0, -GRAVITY])
 DELTA_T = 0.01
 MAX_VELOCITY = 1000000
 MAX_ACCELERATION = 1000000
-DELTA_ROTATION = 2.0
-THRUST_STRENGTH = 20
+THROTTLE_DELTA = 1.0
+MAX_THROTTLE = 100
+MIN_THROTTLE = 0
 
-MINIMUM_Z_COORDINATE = -10
+# NEGATIVE IS UP
+MINIMUM_Z_COORDINATE = 0
+
 
 class Air:
     def __init__(self, runwayLength=100):
@@ -35,8 +38,9 @@ class Air:
         self.pathHistory = []  # For minimap
         self.running = True
         self.maxHistoryLength = 1000  # Cap history lengths
-        self.deltaX = 1000
-        self.deltaZ = 800
+        self.deltaX = 10000
+#         self.deltaZ = -MINIMUM_Z_COORDINATE * 2
+        self.deltaZ = 2000
 
     def addObject(self, geometryData):
         object = Object(geometryData, 0, 0)
@@ -47,19 +51,19 @@ class Air:
     def handleKey(self, event):
         if event.key == pygame.K_UP:
             for obj in self.objects:
-                obj.thrustForward()
+                obj.throttleUp()
         elif event.key == pygame.K_DOWN:
             for obj in self.objects:
-                obj.thrustBackward()
-        else:
-            for obj in self.objects:
-                obj.disableThrust()
+                obj.throttleDown()
         if event.key == pygame.K_LEFT:
             for obj in self.objects:
                 obj.rotateLeft()
         elif event.key == pygame.K_RIGHT:
             for obj in self.objects:
                 obj.rotateRight()
+        elif event.key == pygame.K_k:
+            for obj in self.objects:
+                obj.killEngine()
                 
     def handleKeys(self, keys):
         if keys[pygame.K_SPACE]:
@@ -72,18 +76,25 @@ class Air:
                 obj.rotateRight()
         if keys[pygame.K_UP]:
             for obj in self.objects:
-                obj.thrustForward()
+                obj.throttleUp()
         elif keys[pygame.K_DOWN]:
             for obj in self.objects:
-                obj.thrustBackward()
-        else:
+                obj.throttleDown()
+        elif keys[pygame.K_k]:
             for obj in self.objects:
-                obj.disableThrust()
+                obj.killEngine()
                 
     def updateSize(self, deltaX, deltaZ):
         self.deltaX = max(10, deltaX)  # Minimum size to prevent issues
         self.deltaZ = max(10, deltaZ)
-                
+        
+    def updateModifiableParameters(self, deltaX, deltaZ, enginePower, deltaRotation, rotationMin, rotationMax):
+        self.updateSize(deltaX, deltaZ)
+        for obj in self.objects:
+            obj.enginePower = enginePower
+            obj.deltaRotation = deltaRotation
+            obj.rotationMin = np.radians(rotationMin)
+            obj.rotationMax = np.radians(rotationMax)
                 
     def advanceTime(self):
         for object in self.objects:
@@ -251,28 +262,47 @@ class Object:
         self.accelerationVector = GRAVITY_VECTOR / self.mass
         self.orientationVector = np.array([0.0, 0.0], dtype=np.float64)
         self.forceVector = np.array([0.0, 0.0], dtype=np.float64)
+        self.totalForceVector = np.array([0.0, 0.0], dtype=np.float64)
         self.thrustForce = np.array([0, 0], dtype=np.float64)
+        self.engineThrottle = 0.0
         self.addedMass = 0.0
+#         Modifiable fields
+        self.enginePower = 2000
+        self.deltaRotation = 0.1
+        self.rotationMin = np.radians(-15)
+        self.rotationMax = np.radians(15)
 
     def rotateRight(self):
         if self.geometryData.hasTrailingEdge:
             currentAngle = np.arctan2(self.orientationVector[1], self.orientationVector[0])
-            newAngle = np.radians(np.degrees(currentAngle) + DELTA_ROTATION)
-            self.orientationVector = np.array([np.cos(newAngle), np.sin(newAngle)], dtype=np.float64)
+            newAngle = np.radians(np.degrees(currentAngle) + self.deltaRotation)
+            if(newAngle > self.rotationMin and newAngle < self.rotationMax):
+                self.orientationVector = np.array([np.cos(newAngle), np.sin(newAngle)], dtype=np.float64)
+                self.setThrustForce()
 
     def rotateLeft(self):
         if self.geometryData.hasTrailingEdge:
             currentAngle = np.arctan2(self.orientationVector[1], self.orientationVector[0])
-            newAngle = np.radians(np.degrees(currentAngle) - DELTA_ROTATION)
-            self.orientationVector = np.array([np.cos(newAngle), np.sin(newAngle)], dtype=np.float64)
+            newAngle = np.radians(np.degrees(currentAngle) - self.deltaRotation)
+            if(newAngle > self.rotationMin and newAngle < self.rotationMax):
+                self.orientationVector = np.array([np.cos(newAngle), np.sin(newAngle)], dtype=np.float64)
+                self.setThrustForce()
             
-    def thrustForward(self):
-        self.thrustForce = self.orientationVector * self.mass * THRUST_STRENGTH  # 1 m/s^2 acceleration
+    def throttleUp(self):
+        if(self.engineThrottle < MAX_THROTTLE):
+            self.engineThrottle += THROTTLE_DELTA
+            self.setThrustForce()
 
-    def thrustBackward(self):
-        self.thrustForce = self.orientationVector * -self.mass * THRUST_STRENGTH
+    def throttleDown(self):
+        if(self.engineThrottle > MIN_THROTTLE):
+            self.engineThrottle -= THROTTLE_DELTA
+            self.setThrustForce()            
+    
+    def setThrustForce(self):
+        self.thrustForce = self.orientationVector * self.enginePower * (self.engineThrottle / 100.0)  # 1 m/s^2 acceleration
         
-    def disableThrust(self):
+    def killEngine(self):
+        self.engineThrottle = 0
         self.thrustForce = np.array([0, 0], dtype=np.float64)
 
     def pointDown(self):
@@ -297,13 +327,14 @@ class Object:
         self.updateForce(self.velocityVector, self.accelerationVector)
 #         print("self.forceVector", self.forceVector)
 #         modifiedForceVector = [self.forceVector[0], self.forceVector[1] * -1]
-#         totalForceVector = self.forceVector + ((self.mass + self.addedMass) * GRAVITY_VECTOR)
-        totalForceVector = self.forceVector + ((self.mass) * GRAVITY_VECTOR) + self.thrustForce
+#         totalForceVector = self.forceVector + ((self.mass + self.addedMass) * GRAVITY_VECTOR) + self.thrustForce
+        self.totalForceVector = self.forceVector + ((self.mass) * GRAVITY_VECTOR) + self.thrustForce
 #         Apply normal force if on the ground. (Zero z component of force)
 #         if(self.positionVector[1] <= MINIMUM_Z_COORDINATE):
 #             totalForceVector[1] = 0
 #         TODO: Need to figure out how to represent the ground. So I can have a runway.
-        self.accelerationVector = totalForceVector / (self.mass + self.addedMass)
+#         self.accelerationVector = totalForceVector / (self.mass + self.addedMass)
+        self.accelerationVector = self.totalForceVector / (self.mass)
         self.capAcceleration()
         self.velocityVector += self.accelerationVector * DELTA_T
         self.capVelocity()

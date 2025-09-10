@@ -13,6 +13,8 @@ class Shop:
         self.symmetryLineY = self.drawingRect.bottom
         self.nacaPreset = "0012"
         self.chordLength = 0.203
+        self.mass = 30
+        self.chordLength = 1
         self.mass = 300
         self.font = pygame.font.SysFont("arial", 20)
         self.buttons = [
