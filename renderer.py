@@ -26,7 +26,13 @@ class Renderer:
         self.laserColor = (255, 0, 0)
         self.oceanColor = (0, 100, 255)
         self.groundColor = (139, 69, 19)
+        self.moonColor = (115, 114, 111)
+        self.marsColor = (218, 169, 123)
         self.boulderColor = (166, 129, 61)
+        self.moonBoulderColor = (151, 150, 146)
+        self.marsBoulderColor = (90, 77, 77)
+        self.runwayColor = (17, 18, 20)
+        self.cloudColor = (220, 220, 220)
         self.orientBgColor = (200, 200, 200, 128)
         self.atmosphereColors = [
             (0, 0, 0),        # Top (space)
@@ -36,6 +42,12 @@ class Renderer:
             (100, 149, 237),  # Cornflower blue
             (135, 206, 235)   # Sky blue (ground)
         ]
+        self.marsAtmosphereColors = [  # Added for Mars
+            (0, 0, 0),        # Top (space)
+            (132, 140, 139),  # Transition color
+            (209, 191, 162)   # Low altitude (ground)
+        ]
+        self.moonAtmosphereColor = (0, 0, 0)  # Added for Moon
         self.environment = None
         self.environmentObj = None
         self.zoomFactor = 1.0
@@ -49,6 +61,26 @@ class Renderer:
         self.firstRender = True
 
     def _getAtmosphereColor(self, altitude, deltaZ):
+        if self.environment == "moon":  # Moon: always black
+            return self.moonAtmosphereColor
+        if self.environment == "mars":  # Mars: use marsAtmosphereColors
+            if deltaZ <= 0:
+                return self.marsAtmosphereColors[-1][:3]
+            frac = max(0, min(1, altitude / deltaZ))
+            frac = 1 - frac  # Reverse to go from ground (low) to space (high)
+            num_colors = len(self.marsAtmosphereColors)
+            index = frac * (num_colors - 1)
+            i = int(index)
+            t = index - i
+            if i >= num_colors - 1:
+                return self.marsAtmosphereColors[-1][:3]
+            c1 = self.marsAtmosphereColors[i]
+            c2 = self.marsAtmosphereColors[i + 1]
+            r = int(c1[0] + (c2[0] - c1[0]) * t)
+            g = int(c1[1] + (c2[1] - c1[1]) * t)
+            b = int(c1[2] + (c2[2] - c1[2]) * t)
+            return (r, g, b)
+        # Default: use atmosphereColors for air, space, or other environments
         if deltaZ <= 0:
             return self.atmosphereColors[-1][:3]
         frac = max(0, min(1, altitude / deltaZ))
@@ -143,7 +175,7 @@ class Renderer:
         if self.environment in ["ocean", "pilot"]:
             self.deltaX = getattr(environmentObj, 'deltaX', 100.0)
             self.deltaZ = getattr(environmentObj, 'deltaZ', 100.0)
-        elif self.environment in ["air", "space"]:
+        elif self.environment in ["air", "space", "moon", "mars"]:
             self.deltaX = getattr(environmentObj, 'deltaX', 100.0)
             self.deltaZ = getattr(environmentObj, 'deltaZ', 100.0)
         else:
@@ -159,7 +191,7 @@ class Renderer:
             self.globalOffsetZ = 0.0
             self.firstRender = False
         self.updateViewParameters()
-        if self.environment in ["air", "space"] and environmentObj.objects:
+        if self.environment in ["air", "space", "moon", "mars"] and environmentObj.objects:
             altitude = environmentObj.objects[0].positionVector[1]
             self.bgColor = self._getAtmosphereColor(altitude, self.deltaZ)
         else:
@@ -167,7 +199,7 @@ class Renderer:
         self.screen.fill(self.bgColor)
         self._renderGlobalView(environmentObj, self.screen)
         self._renderOrientationView(environmentObj, self.screen)
-        if self.environment in ["ocean", "pilot", "air", "space"]:
+        if self.environment in ["ocean", "pilot", "air", "space", "moon", "mars"]:
             self._renderMinimapView(environmentObj, self.screen)
 
     def updateViewParameters(self):
@@ -239,7 +271,7 @@ class Renderer:
         if self.environment in ["ocean", "pilot"]:
             x_bound_min, x_bound_max = 0, self.deltaX
             z_bound_min, z_bound_max = -self.deltaZ, 0
-        elif self.environment in ["air", "space"]:
+        elif self.environment in ["air", "space", "moon", "mars"]:
             x_bound_min, x_bound_max = -self.deltaX/2, self.deltaX/2
             z_bound_min, z_bound_max = 0, self.deltaZ
         else:  # tunnel
@@ -265,15 +297,41 @@ class Renderer:
                 pygame.draw.line(surface, self.oceanColor, left, right, 2)
                 
 #         Render terrain objects
-        if self.environment in ["air", "space"]:
+        if self.environment in ["air", "space", "moon", "mars"]:
             left = self._toScreenCoords(-self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
             right = self._toScreenCoords(self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
             ground_rect = pygame.Rect(left[0], left[1], right[0] - left[0], self.globalHeight - left[1])
-            pygame.draw.rect(surface, self.groundColor, ground_rect)
+            if(self.environment in ["air", "space"]):
+                pygame.draw.rect(surface, self.groundColor, ground_rect)
+            if(self.environment == "moon"):
+                pygame.draw.rect(surface, self.moonColor, ground_rect)
+            if(self.environment == "mars"):
+                pygame.draw.rect(surface, self.marsColor, ground_rect)
             for terrainObject in environmentObj.terrainObjects:
                 screenPos = self._toScreenCoords(terrainObject["pos"][0], terrainObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
                 radius = terrainObject["radius"] * self.scaleX
-                pygame.draw.circle(surface, self.boulderColor, screenPos, max(5, radius))
+                if(self.environment == "space"):
+                    pygame.draw.circle(surface, self.boulderColor, screenPos, max(5, radius))
+                if(self.environment == "moon"):
+                    pygame.draw.circle(surface, self.moonBoulderColor, screenPos, max(5, radius))
+                if(self.environment == "mars"):
+                    pygame.draw.circle(surface, self.marsBoulderColor, screenPos, max(5, radius))
+
+            if(self.environment in ["air", "space"]):
+                for cloudObject in environmentObj.cloudObjects:
+                    screenPos = self._toScreenCoords(cloudObject["pos"][0], cloudObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
+                    radius = cloudObject["radius"] * self.scaleX
+                    pygame.draw.circle(surface, self.cloudColor, screenPos, max(5, radius))
+                
+        if self.environment in ["air"]:
+            for runwayObject in environmentObj.runwayObjects:
+                screenPos = self._toScreenCoords(runwayObject["pos"][0], runwayObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.rect(surface, self.runwayColor, pygame.Rect(screenPos[0], screenPos[1], environmentObj.RUNWAY_SEGMENT_WIDTH * self.scaleX, environmentObj.RUNWAY_SEGMENT_HEIGHT * self.scaleX), 2)
+
+        if self.environment in ["space"]:
+            for launchpadObject in environmentObj.launchpadObjects:
+                screenPos = self._toScreenCoords(launchpadObject["pos"][0], launchpadObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.rect(surface, self.runwayColor, pygame.Rect(screenPos[0], screenPos[1], environmentObj.LAUNCHPAD_SEGMENT_WIDTH * self.scaleX, environmentObj.LAUNCHPAD_SEGMENT_HEIGHT * self.scaleX), 2)
 
 
         for obj in environmentObj.objects:
@@ -307,7 +365,7 @@ class Renderer:
                     start = self._toScreenCoords(centroidX, centroidZ, isGlobalView=True, subDomainCenter=subDomainCenter)
                     end = self._toScreenCoords(centroidX + forceGlobal[0], centroidZ + forceGlobal[1], isGlobalView=True, subDomainCenter=subDomainCenter)
                     self._drawArrow(surface, start, end, self.forceColor)
-            if self.environment in ["pilot", "air", "space"]:
+            if self.environment in ["pilot", "air", "space", "moon", "mars"]:
                 scale = 0.075
                 thrust = obj.thrustForce
                 norm = np.sqrt(thrust[0]**2 + thrust[1]**2)
@@ -420,7 +478,7 @@ class Renderer:
             pygame.draw.line(overlay, self.oceanColor, (0, self.minimapHeight), (self.minimapWidth, self.minimapHeight), 2)
             pygame.draw.line(overlay, self.oceanColor, (0, 0), (0, self.minimapHeight), 2)
             pygame.draw.line(overlay, self.oceanColor, (self.minimapWidth, 0), (self.minimapWidth, self.minimapHeight), 2)
-        elif self.environment in ["air", "space"]:
+        elif self.environment in ["air", "space", "moon", "mars"]:
             pygame.draw.line(overlay, self.oceanColor, (0, 0), (self.minimapWidth, 0), 2)
             pygame.draw.line(overlay, self.oceanColor, (0, self.minimapHeight), (self.minimapWidth, self.minimapHeight), 2)
             pygame.draw.line(overlay, self.oceanColor, (0, 0), (0, self.minimapHeight), 2)

@@ -15,7 +15,9 @@ class MainMenu:
             {"text": "Ocean", "action": "ocean", "rect": None},
             {"text": "Pilot", "action": "pilot", "rect": None},
             {"text": "Air", "action": "air", "rect": None},
-            {"text": "Space", "action": "space", "rect": None}
+            {"text": "Space", "action": "space", "rect": None},
+            {"text": "Moon", "action": "moon", "rect": None},  # Added Moon
+            {"text": "Mars", "action": "mars", "rect": None}   # Added Mars
         ]
         self.showHelp = False
         self.buttonWidth = 200
@@ -26,7 +28,7 @@ class MainMenu:
         self.rotationAngle = 0.0  # Track rotation angle in degrees
         self.rotationSpeed = 2.0  # Degrees per frame (adjust for speed)
         self.updateButtonRects()
-        self.AVAILABLE_ENVIRONMENTS = ["tunnel", "ocean", "pilot", "air", "space"]
+        self.AVAILABLE_ENVIRONMENTS = ["tunnel", "ocean", "pilot", "air", "space", "moon", "mars"]  # Added moon, mars
 
     def updateButtonRects(self):
         buttonWidth = self.buttonWidth

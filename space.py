@@ -15,16 +15,25 @@ MAX_VELOCITY = 1000000
 MAX_ACCELERATION = 1000000
 THROTTLE_DELTA = 1.0
 MAX_THROTTLE = 100
-MIN_THROTTLE = 0
+MIN_THROTTLE = -75
 
 # NEGATIVE IS UP
 MINIMUM_Z_COORDINATE = 0
 
+TERRAIN_OBJECTS_MINIMUM_Z_COORDINATE = -1000
+CLOUD_OBJECTS_MINIMUM_Z_COORDINATE = 100
+CLOUD_OBJECTS_MAXIMUM_Z_COORDINATE = 5000
+
+
+LAUNCHPAD_X_COORDINATE = -1
 
 class Space:
-    def __init__(self, runwayLength=100):
+    LAUNCHPAD_SEGMENT_WIDTH = 1
+    LAUNCHPAD_SEGMENT_HEIGHT = 1
+    
+    def __init__(self, launchpadHeight=30):
         print("Initializing Space Environment")
-        self.runwayLength = runwayLength
+        self.launchpadHeight = launchpadHeight
         self.objects = []
         self.frameNumber = 0
         self.frameFilenames = []
@@ -38,15 +47,45 @@ class Space:
         self.pathHistory = []  # For minimap
         self.running = True
         self.maxHistoryLength = 1000  # Cap history lengths
-        self.deltaX = 10000
+        self.deltaX = 1000
 #         self.deltaZ = -MINIMUM_Z_COORDINATE * 2
-        self.deltaZ = 2000
+        self.deltaZ = 10000
+        self.terrainObjects = []
+        self.cloudObjects = []
+        self.launchpadObjects = []
+        self.spawnTerrainObjects()
+        self.spawnCloudObjects()
+        self.spawnLaunchpadObjects()
+    
 
     def addObject(self, geometryData):
         object = Object(geometryData, 0, 0)
-        object.pointRight()
+        object.pointUp()
         self.objects.append(object)
         return object
+        
+    def spawnTerrainObjects(self):
+        for _ in range(100):
+            x = np.random.uniform(-self.deltaX/2, self.deltaX/2)
+            z = np.random.uniform(TERRAIN_OBJECTS_MINIMUM_Z_COORDINATE, -25)
+            radius = np.random.uniform(0.5, 50)
+            self.terrainObjects.append({"pos": [x, z], "radius": radius})
+            
+    def spawnCloudObjects(self):
+        for _ in range(100):
+            x = np.random.uniform(-self.deltaX/2, self.deltaX/2)
+            z = np.random.uniform(CLOUD_OBJECTS_MINIMUM_Z_COORDINATE, CLOUD_OBJECTS_MAXIMUM_Z_COORDINATE)
+            vx = np.random.uniform(-2, 5)
+            vz = np.random.uniform(-1, 1)
+            radius = np.random.uniform(25, 100)
+            self.cloudObjects.append({"pos": [x, z], "vel": [vx, vz], "radius": radius})
+            
+    def spawnLaunchpadObjects(self):
+        x = LAUNCHPAD_X_COORDINATE
+        zCoordinates = np.arange(0, self.launchpadHeight)
+        for z in zCoordinates:
+            self.launchpadObjects.append({"pos": [x, z]})
+        
 
     def handleKey(self, event):
         if event.key == pygame.K_UP:
@@ -83,6 +122,9 @@ class Space:
         elif keys[pygame.K_k]:
             for obj in self.objects:
                 obj.killEngine()
+        elif keys[pygame.K_r]:
+            for obj in self.objects:
+                obj.reverseEngine()
                 
     def updateSize(self, deltaX, deltaZ):
         self.deltaX = max(10, deltaX)  # Minimum size to prevent issues
@@ -149,6 +191,18 @@ class Space:
                     if len(self.addedMasses) > self.maxHistoryLength:
                         self.addedMasses.pop(0)
                 self.frameNumber += 1
+        self.updateClouds()
+                
+#                 
+    def updateClouds(self):
+        for cloudObject in self.cloudObjects:
+            cloudObject["pos"][0] += cloudObject["vel"][0] * DELTA_T
+            cloudObject["pos"][1] += cloudObject["vel"][1] * DELTA_T
+            if cloudObject["pos"][0] < -self.deltaX/2 or cloudObject["pos"][0] > self.deltaX/2:
+                cloudObject["vel"][0] = -cloudObject["vel"][0]
+            if cloudObject["pos"][1] < -self.deltaZ or cloudObject["pos"][1] > CLOUD_OBJECTS_MINIMUM_Z_COORDINATE:
+                cloudObject["vel"][1] = -cloudObject["vel"][1]
+
                 
     def cleanup(self):
         # Clear lists to free memory, but preserve objects (geometry)
@@ -267,7 +321,7 @@ class Object:
         self.engineThrottle = 0.0
         self.addedMass = 0.0
 #         Modifiable fields
-        self.enginePower = 2000
+        self.enginePower = 5000
         self.deltaRotation = 0.1
         self.rotationMin = np.radians(-15)
         self.rotationMax = np.radians(15)
@@ -294,9 +348,14 @@ class Object:
             self.setThrustForce()
 
     def throttleDown(self):
+        if(self.engineThrottle > 0):
+            self.engineThrottle -= THROTTLE_DELTA
+            self.setThrustForce()      
+
+    def reverseEngine(self):
         if(self.engineThrottle > MIN_THROTTLE):
             self.engineThrottle -= THROTTLE_DELTA
-            self.setThrustForce()            
+            self.setThrustForce()      
     
     def setThrustForce(self):
         self.thrustForce = self.orientationVector * self.enginePower * (self.engineThrottle / 100.0)  # 1 m/s^2 acceleration

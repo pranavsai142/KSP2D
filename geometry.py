@@ -461,7 +461,7 @@ class Geometry:
         plt.title("num points:" + str(len(self.pointXCoords)))
         plt.legend()
         plt.savefig(os.path.join('graphs', filename))
-#         plt.show()
+        plt.show()
         plt.close()
 
     def plotNormals(self, filename):
