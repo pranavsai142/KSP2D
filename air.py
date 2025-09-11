@@ -20,6 +20,7 @@ MIN_THROTTLE = 0
 # NEGATIVE IS UP
 MINIMUM_Z_COORDINATE = 0
 
+TERRAIN_OBJECTS_MINIMUM_Z_COORDINATE = -1000
 
 class Air:
     def __init__(self, runwayLength=100):
@@ -41,12 +42,21 @@ class Air:
         self.deltaX = 10000
 #         self.deltaZ = -MINIMUM_Z_COORDINATE * 2
         self.deltaZ = 2000
+        self.terrainObjects = []
+        self.spawnTerrainObjects()
 
     def addObject(self, geometryData):
         object = Object(geometryData, 0, 0)
         object.pointRight()
         self.objects.append(object)
         return object
+        
+    def spawnTerrainObjects(self):
+        for _ in range(100):
+            x = np.random.uniform(-self.deltaX, self.deltaX)
+            z = np.random.uniform(TERRAIN_OBJECTS_MINIMUM_Z_COORDINATE, -25)
+            radius = np.random.uniform(0.5, 50)
+            self.terrainObjects.append({"pos": [x, z], "radius": radius})
 
     def handleKey(self, event):
         if event.key == pygame.K_UP:
@@ -149,6 +159,18 @@ class Air:
                     if len(self.addedMasses) > self.maxHistoryLength:
                         self.addedMasses.pop(0)
                 self.frameNumber += 1
+#         self.updateClouds()
+                
+#                 
+#     def updateClouds(self):
+#         for asteroid in self.asteroids:
+#             asteroid["pos"][0] += asteroid["vel"][0] * DELTA_T
+#             asteroid["pos"][1] += asteroid["vel"][1] * DELTA_T
+#             if asteroid["pos"][0] < 0 or asteroid["pos"][0] > self.deltaX:
+#                 asteroid["vel"][0] = -asteroid["vel"][0]
+#             if asteroid["pos"][1] < -self.deltaZ or asteroid["pos"][1] > 0:
+#                 asteroid["vel"][1] = -asteroid["vel"][1]
+                
                 
     def cleanup(self):
         # Clear lists to free memory, but preserve objects (geometry)

@@ -39,8 +39,8 @@ class UIManager:
             "deltaZ": 2000.0,
             "enginePower": 2000,
             "deltaRotation": 0.1,
-            "rotationMin": -45,
-            "rotationMax": 45,
+            "rotationMin": -15,
+            "rotationMax": 30,
         }
         self.spaceParams = {
             "deltaX": 1000.0,
@@ -302,7 +302,7 @@ class UIManager:
         obj_id = id(obj)
         if obj_id not in self.debugHistory:
             self.debugHistory[obj_id] = {
-                'position': [], 'velocity': [], 'acceleration': [], 'airspeed_body': [],
+                'position': [], 'position_z': [], 'velocity': [], 'acceleration': [], 'airspeed_body': [],
                 'orientation': [], 'rotAngle': [], 'aoa': [], 'throttle': [], 'thrust': [],
                 'force': [], 'lift': [], 'drag': [], 'addedMass': []
             }
@@ -312,6 +312,7 @@ class UIManager:
         # Update history
         pos = tuple(obj.positionVector)
         history['position'].append(pos)
+        history['position_z'].append(pos[1])  # Store z-component separately
         vel = tuple(obj.velocityVector)
         history['velocity'].append(vel)
         acc = tuple(obj.accelerationVector)
@@ -362,20 +363,20 @@ class UIManager:
         history['airspeed_body'].append(body_airspeed)
     
         # Throttle
-        throttle = obj.engineThrottle * 100 if obj.engineThrottle <= 1.0 else obj.engineThrottle
+        throttle = obj.engineThrottle * 100 if hasattr(obj, 'engineThrottle') and obj.engineThrottle <= 1.0 else (getattr(obj, 'engineThrottle', 0) or 0)
         history['throttle'].append(throttle)
     
         # Thrust
-        thrust = tuple(obj.thrustForce)
+        thrust = tuple(getattr(obj, 'thrustForce', [0, 0]))
         history['thrust'].append(thrust)
     
         # Force
-        force = tuple(obj.forceVector)
+        force = tuple(getattr(obj, 'forceVector', [0, 0]))
         history['force'].append(force)
     
         # Lift and Drag
-        thrust_arr = np.array(obj.thrustForce)
-        force_arr = np.array(obj.forceVector)
+        thrust_arr = np.array(thrust)
+        force_arr = np.array(force)
         aero = force_arr - thrust_arr
         drag = 0.0
         lift_signed = 0.0
@@ -397,8 +398,8 @@ class UIManager:
                 history[key].pop(0)
     
         # Render to surface
-        font = pygame.font.SysFont("courier", 14)
-        small_font = pygame.font.SysFont("courier", 12)
+        font = pygame.font.SysFont("courier", 12)
+        small_font = pygame.font.SysFont("courier", 10)
     
         def render_value(label, value, y_pos):
             text = font.render(f"{label}: {value}", True, (255, 255, 255))
@@ -418,7 +419,7 @@ class UIManager:
             if is_vector:
                 vals = [np.linalg.norm(np.array(v)) for v in h]
             else:
-                vals = [float(v) for v in h]
+                vals = [float(v) for v in h if isinstance(v, (int, float))]
             if not vals:
                 return y_pos + 25
             minv = min(vals)
@@ -430,7 +431,7 @@ class UIManager:
             prev_y = None
             n = len(vals)
             for i, v in enumerate(vals):
-                x = 10 + (i / (n - 1)) * graph_w if n > 1 else 10 + graph_w / 2
+                x = 10 + (i / max(n - 1, 1)) * graph_w
                 yg = y_pos + graph_h - ((v - minv) / rangev * graph_h)
                 if prev_x is not None:
                     pygame.draw.line(surface, (0, 255, 0), (prev_x, prev_y), (x, yg), 1)
@@ -438,10 +439,41 @@ class UIManager:
                 prev_y = yg
             return y_pos + 25  # Reduced spacing
     
+        def render_position_z_graph(y_pos):
+            text = small_font.render("Graph: Position Z", True, (200, 200, 200))
+            surface.blit(text, (10, y_pos))
+            y_pos += 10
+            graph_rect = pygame.Rect(10, y_pos, 380, 20)
+            pygame.draw.rect(surface, (30, 30, 30), graph_rect)
+            pygame.draw.rect(surface, (100, 100, 100), graph_rect, 1)
+            h = history['position_z']
+            if len(h) < 2:
+                return y_pos + 25
+            vals = [float(v) for v in h]
+            if not vals:
+                return y_pos + 25
+            minv = min(vals)
+            maxv = max(vals)
+            rangev = maxv - minv if maxv != minv else 1.0
+            graph_w = 380
+            graph_h = 20
+            prev_x = None
+            prev_y = None
+            n = len(vals)
+            for i, v in enumerate(vals):
+                x = 10 + (i / max(n - 1, 1)) * graph_w
+                yg = y_pos + graph_h - ((v - minv) / rangev * graph_h)
+                if prev_x is not None:
+                    pygame.draw.line(surface, (0, 255, 0), (prev_x, prev_y), (x, yg), 1)
+                prev_x = x
+                prev_y = yg
+            return y_pos + 25
+    
         y = 10
-        # Numerical values only for position and orientation
-        y = render_value("Position", f"({pos[0]:.2f}, {pos[1]:.2f})", y)
+        # Numerical values for position and orientation
         y = render_value("Orientation", f"({orient[0]:.2f}, {orient[1]:.2f})", y)
+        y = render_value("Position", f"({pos[0]:.2f}, {pos[1]:.2f})", y)
+        y = render_graph('position_z', y, False)
         # Other values with graphs
         y = render_value("Velocity", f"({vel[0]:.2f}, {vel[1]:.2f})", y)
         y = render_graph('velocity', y, True)

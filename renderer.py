@@ -7,7 +7,7 @@ class Renderer:
     ZOOM = 0.01
     TUNNEL_ZOOM = 0.01
     SHOW_GLOBAL_FORCE_VECTOR = True
-    GENERATE_CLOUDS = False
+#     GENERATE_CLOUDS = True
 
     def __init__(self, windowWidth=1000, windowHeight=800):
         pygame.init()
@@ -26,6 +26,7 @@ class Renderer:
         self.laserColor = (255, 0, 0)
         self.oceanColor = (0, 100, 255)
         self.groundColor = (139, 69, 19)
+        self.boulderColor = (166, 129, 61)
         self.orientBgColor = (200, 200, 200, 128)
         self.atmosphereColors = [
             (0, 0, 0),        # Top (space)
@@ -43,41 +44,9 @@ class Renderer:
         self.prevSubDomainCenter = [0, 0]
         self.deltaX = 100.0
         self.deltaZ = 100.0
-        self.boulders = []
-        self.clouds = []
-        self.currentEnvironment = None  # Track current environment
-        self.currentDeltaX = None       # Track current deltaX
-        self.currentDeltaZ = None       # Track current deltaZ
         self._updateDimensions(windowWidth, windowHeight)
         self.running = True
         self.firstRender = True
-
-    def _generateGroundAndClouds(self, deltaX, deltaZ):
-        """Generate static boulders and clouds in the environment coordinate system."""
-        self.boulders = []
-        self.clouds = []
-        if self.environment not in ["air", "space"] or not self.GENERATE_CLOUDS:
-            return
-
-        num_boulders = 1000
-        for _ in range(num_boulders):
-            x = random.uniform(-deltaX / 2, deltaX / 2)
-            z = random.uniform(0, -0.1 * deltaZ)
-            radius = random.uniform(0.5, 2.0)
-            color = (
-                random.randint(100, 160),
-                random.randint(50, 100),
-                random.randint(20, 60)
-            )
-            self.boulders.append({"pos": [x, z], "radius": radius, "color": color})
-
-        num_clouds = 5000
-        for _ in range(num_clouds):
-            x = random.uniform(-deltaX / 2, deltaX / 2)
-            z = random.uniform(0.2 * deltaZ, 0.8 * deltaZ)
-            radius = random.uniform(2.0, 5.0)
-            alpha = random.randint(50, 100)
-            self.clouds.append({"pos": [x, z], "radius": radius, "color": (255, 255, 255, alpha)})
 
     def _getAtmosphereColor(self, altitude, deltaZ):
         if deltaZ <= 0:
@@ -181,19 +150,6 @@ class Renderer:
             self.deltaX = 100.0
             self.deltaZ = 100.0
 
-        # Generate boulders/clouds only if environment or deltaX/deltaZ changes
-        if (self.environment != self.currentEnvironment or 
-            self.deltaX != self.currentDeltaX or 
-            self.deltaZ != self.currentDeltaZ):
-            if self.environment in ["air", "space"]:
-                self._generateGroundAndClouds(self.deltaX, self.deltaZ)
-            else:
-                self.boulders = []
-                self.clouds = []
-            self.currentEnvironment = self.environment
-            self.currentDeltaX = self.deltaX
-            self.currentDeltaZ = self.deltaZ
-
         self.minimapScaleX = self.minimapWidth / self.deltaX if self.deltaX else 1.0
         self.minimapScaleZ = self.minimapHeight / self.deltaZ if self.deltaZ else 1.0
         self.prevSubDomainCenter = self._computeSubDomainCenter(environmentObj)
@@ -290,42 +246,35 @@ class Renderer:
             x_bound_min, x_bound_max = -0.5, 0.5
             z_bound_min, z_bound_max = -0.5, 0.5
 
+        if self.environment in ["ocean", "pilot"]:
+            if xMin <= x_bound_max <= xMax:
+                top = self._toScreenCoords(x_bound_max, max(zMin, z_bound_min), isGlobalView=True, subDomainCenter=subDomainCenter)
+                bottom = self._toScreenCoords(x_bound_max, min(zMax, z_bound_max), isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.line(surface, self.oceanColor, top, bottom, 2)
+            if xMin <= x_bound_min <= xMax:
+                top = self._toScreenCoords(x_bound_min, max(zMin, z_bound_min), isGlobalView=True, subDomainCenter=subDomainCenter)
+                bottom = self._toScreenCoords(x_bound_min, min(zMax, z_bound_max), isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.line(surface, self.oceanColor, top, bottom, 2)
+            if zMin <= z_bound_min <= zMax:
+                left = self._toScreenCoords(max(xMin, x_bound_min), z_bound_min, isGlobalView=True, subDomainCenter=subDomainCenter)
+                right = self._toScreenCoords(min(xMax, x_bound_max), z_bound_min, isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.line(surface, self.groundColor, left, right, 3)
+            if zMin <= z_bound_max <= zMax:
+                left = self._toScreenCoords(max(xMin, x_bound_min), z_bound_max, isGlobalView=True, subDomainCenter=subDomainCenter)
+                right = self._toScreenCoords(min(xMax, x_bound_max), z_bound_max, isGlobalView=True, subDomainCenter=subDomainCenter)
+                pygame.draw.line(surface, self.oceanColor, left, right, 2)
+                
+#         Render terrain objects
         if self.environment in ["air", "space"]:
-            left = self._toScreenCoords(max(xMin, x_bound_min), 0, isGlobalView=True, subDomainCenter=subDomainCenter)
-            right = self._toScreenCoords(min(xMax, x_bound_max), 0, isGlobalView=True, subDomainCenter=subDomainCenter)
+            left = self._toScreenCoords(-self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
+            right = self._toScreenCoords(self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
             ground_rect = pygame.Rect(left[0], left[1], right[0] - left[0], self.globalHeight - left[1])
             pygame.draw.rect(surface, self.groundColor, ground_rect)
-            for boulder in self.boulders:
-                x, z = boulder["pos"]
-                screenPos = self._toScreenCoords(x, z, isGlobalView=True, isStatic=True)
-                radius = boulder["radius"] * self.scaleX
-                if 0 <= screenPos[0] <= self.globalWidth and 0 <= screenPos[1] <= self.globalHeight:
-                    pygame.draw.circle(surface, boulder["color"], screenPos, max(3, radius))
-            for cloud in self.clouds:
-                x, z = cloud["pos"]
-                screenPos = self._toScreenCoords(x, z, isGlobalView=True, isStatic=True)
-                radius = cloud["radius"] * self.scaleX
-                if 0 <= screenPos[0] <= self.globalWidth and 0 <= screenPos[1] <= self.globalHeight:
-                    cloud_surface = pygame.Surface((int(radius * 2), int(radius * 2)), pygame.SRCALPHA)
-                    pygame.draw.circle(cloud_surface, cloud["color"], (radius, radius), radius)
-                    surface.blit(cloud_surface, (screenPos[0] - radius, screenPos[1] - radius))
+            for terrainObject in environmentObj.terrainObjects:
+                screenPos = self._toScreenCoords(terrainObject["pos"][0], terrainObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
+                radius = terrainObject["radius"] * self.scaleX
+                pygame.draw.circle(surface, self.boulderColor, screenPos, max(5, radius))
 
-        if xMin <= x_bound_max <= xMax:
-            top = self._toScreenCoords(x_bound_max, max(zMin, z_bound_min), isGlobalView=True, subDomainCenter=subDomainCenter)
-            bottom = self._toScreenCoords(x_bound_max, min(zMax, z_bound_max), isGlobalView=True, subDomainCenter=subDomainCenter)
-            pygame.draw.line(surface, self.oceanColor, top, bottom, 2)
-        if xMin <= x_bound_min <= xMax:
-            top = self._toScreenCoords(x_bound_min, max(zMin, z_bound_min), isGlobalView=True, subDomainCenter=subDomainCenter)
-            bottom = self._toScreenCoords(x_bound_min, min(zMax, z_bound_max), isGlobalView=True, subDomainCenter=subDomainCenter)
-            pygame.draw.line(surface, self.oceanColor, top, bottom, 2)
-        if zMin <= z_bound_min <= zMax:
-            left = self._toScreenCoords(max(xMin, x_bound_min), z_bound_min, isGlobalView=True, subDomainCenter=subDomainCenter)
-            right = self._toScreenCoords(min(xMax, x_bound_max), z_bound_min, isGlobalView=True, subDomainCenter=subDomainCenter)
-            pygame.draw.line(surface, self.groundColor, left, right, 3)
-        if zMin <= z_bound_max <= zMax:
-            left = self._toScreenCoords(max(xMin, x_bound_min), z_bound_max, isGlobalView=True, subDomainCenter=subDomainCenter)
-            right = self._toScreenCoords(min(xMax, x_bound_max), z_bound_max, isGlobalView=True, subDomainCenter=subDomainCenter)
-            pygame.draw.line(surface, self.oceanColor, left, right, 2)
 
         for obj in environmentObj.objects:
             orient = np.array(obj.orientationVector, dtype=float)
@@ -391,7 +340,7 @@ class Renderer:
                 end = self._toScreenCoords(laser["pos"][0] + laser["vel"][0] * 0.1, laser["pos"][1] + laser["vel"][1] * 0.1,
                                           isGlobalView=True, subDomainCenter=subDomainCenter)
                 pygame.draw.line(surface, self.laserColor, start, end, 2)
-
+                
     def _renderOrientationView(self, environmentObj, surface):
         overlay = pygame.Surface((self.orientWidth, self.orientHeight), pygame.SRCALPHA)
         overlay.fill(self.orientBgColor)

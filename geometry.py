@@ -11,8 +11,9 @@ NACA_FOIL_RESOLUTION = 0.001
 NACA_0012_FOIL_TYPE = "0012"
 COLOCATION_SCALING_FACTOR_X = 0.995
 COLOCATION_SCALING_FACTOR_Z = 0.95
-STREAMLINED_DRAG_COEFFICIENT = 0.04
-CIRCLE_DRAG_COEFFICIENT = 0.05
+DRAG_MULTIPLIER = 100
+STREAMLINED_DRAG_COEFFICIENT = 0.04 * DRAG_MULTIPLIER
+CIRCLE_DRAG_COEFFICIENT = 0.05 * DRAG_MULTIPLIER
 
 APPLY_PARAMETERIZED_DRAG = True
 
@@ -53,6 +54,7 @@ class Geometry:
         # Take the absolute value and divide by 2
         area = abs(area) / 2.0
         self.frontalArea = area
+        print(self.frontalArea)
             
     # Keep the rest of the methods exactly as provided in the original code
     def generateNormals(self):
@@ -419,9 +421,10 @@ class Geometry:
         # Compute force using dynamic pressure
         localForceVector = self.computeForce(localVelocityVector, phi, phiT, tangentialTotalVel)
         
-        dragForce = self.dragCoefficient * 0.5 * RHO * (localVelocityVector[0]**2 + localVelocityVector[1]**2) * self.frontalArea
+#         Drag nedes area. Calculate frontalArea and multiply against itself 
+        dragMagnitude = self.dragCoefficient * 0.5 * RHO * (localVelocityVector[0]**2 + localVelocityVector[1]**2) * self.frontalArea
         if(APPLY_PARAMETERIZED_DRAG):
-            localForceVector[1] = localForceVector[1] - dragForce
+            localForceVector[0] = localForceVector[0] - dragMagnitude
 
 
         # Store results for rendering
