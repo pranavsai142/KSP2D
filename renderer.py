@@ -298,30 +298,42 @@ class Renderer:
                 
 #         Render terrain objects
         if self.environment in ["air", "space", "moon", "mars"]:
+#         Draw ground as a rect
             left = self._toScreenCoords(-self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
             right = self._toScreenCoords(self.deltaX, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
             ground_rect = pygame.Rect(left[0], left[1], right[0] - left[0], self.globalHeight - left[1])
-            if(self.environment in ["air", "space"]):
+            if(self.environment in ["air"]):
                 pygame.draw.rect(surface, self.groundColor, ground_rect)
             if(self.environment == "moon"):
                 pygame.draw.rect(surface, self.moonColor, ground_rect)
             if(self.environment == "mars"):
                 pygame.draw.rect(surface, self.marsColor, ground_rect)
+    #        Draw earth as a circle    
+            if self.environment in ["space"]:
+                earthCenter = self._toScreenCoords(0, 0, isGlobalView=True, subDomainCenter=subDomainCenter)
+                clipTopLeft = self._toScreenCoords(xMin - self.globalOffsetX, zMin - self.globalOffsetZ, isGlobalView=True, subDomainCenter=subDomainCenter)
+                clipBottomRight = self._toScreenCoords(xMax - self.globalOffsetX, zMax - self.globalOffsetZ, isGlobalView=True, subDomainCenter=subDomainCenter)
+                clip = pygame.Rect((clipTopLeft[0], clipBottomRight[1], clipBottomRight[0] - clipTopLeft[0], clipTopLeft[1] - clipBottomRight[1]))
+                surface.set_clip(clip)
+                pygame.draw.circle(surface, self.groundColor, earthCenter, self.environmentObj.earthRadius * self.scaleX)
+                surface.set_clip(None)
+#            Draw boulders
             for terrainObject in environmentObj.terrainObjects:
                 screenPos = self._toScreenCoords(terrainObject["pos"][0], terrainObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
                 radius = terrainObject["radius"] * self.scaleX
-                if(self.environment == "space"):
+                if(self.environment in ["air"]):
                     pygame.draw.circle(surface, self.boulderColor, screenPos, max(5, radius))
                 if(self.environment == "moon"):
                     pygame.draw.circle(surface, self.moonBoulderColor, screenPos, max(5, radius))
                 if(self.environment == "mars"):
                     pygame.draw.circle(surface, self.marsBoulderColor, screenPos, max(5, radius))
-
-            if(self.environment in ["air", "space"]):
+#          Draw clouds
+            if(self.environment in ["air"]):
                 for cloudObject in environmentObj.cloudObjects:
                     screenPos = self._toScreenCoords(cloudObject["pos"][0], cloudObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
                     radius = cloudObject["radius"] * self.scaleX
                     pygame.draw.circle(surface, self.cloudColor, screenPos, max(5, radius))
+                
                 
         if self.environment in ["air"]:
             for runwayObject in environmentObj.runwayObjects:

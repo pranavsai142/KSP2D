@@ -4,7 +4,12 @@ import matplotlib.pyplot as plt
 import os
 import imageio
 import copy
+import datetime
 from geometry import Geometry, Circle, Foil
+
+import Constants as const
+import OrbitalMath as orbitm
+import VectorMath as vecm
 
 MAX_FRAMES = 10000
 PLOT_FRAMES = False
@@ -27,11 +32,17 @@ CLOUD_OBJECTS_MAXIMUM_Z_COORDINATE = 5000
 
 LAUNCHPAD_X_COORDINATE = -1
 
+# Integrating Luna with KSPOS
+# Represent the Earth as a circle
+# 0,0 is the center of earth, draw as a circle, calculating the radius
+# To inititalize environment, take as input the latitude at which to launch from. Do not have it configured to change latitude
+# Earth will be drawn by renderer as a circle with the proper radius accounting for squishing factor
+
 class Space:
     LAUNCHPAD_SEGMENT_WIDTH = 1
     LAUNCHPAD_SEGMENT_HEIGHT = 1
     
-    def __init__(self, launchpadHeight=30):
+    def __init__(self, launchpadHeight=30, latitude=28.3968, longitude=80.5288, datetime=datetime.datetime(year=1995, month=11, day=18, hour=12, minute=46, second=0)):
         print("Initializing Space Environment")
         self.launchpadHeight = launchpadHeight
         self.objects = []
@@ -53,13 +64,36 @@ class Space:
         self.terrainObjects = []
         self.cloudObjects = []
         self.launchpadObjects = []
+        
+        self.latitude = latitude
+        self.longitude = longitude
+        self.datetime = datetime
+        
+        
+#         self.earthRadius = orbitm.find_radius_from_body(
+#             latitude, 
+#             const.EARTH_A_RADIUS, 
+#             const.EARTH_FLATTEN_CONST, 
+#             0)
+            
+        self.initPosition = orbitm.to_eci_coordinates(
+                    self.latitude, 
+                    self.longitude, 
+                    0, 
+                    self.datetime, 
+                    const.EARTH_FLATTEN_CONST, 
+                    const.EARTH_A_RADIUS)
+        self.earthCenter = [0, 0]
+        self.earthRadius = vecm.distance([0, 0], [self.initPosition[0], self.initPosition[1]])
+#         print(self.earthRadius)
+            
         self.spawnTerrainObjects()
         self.spawnCloudObjects()
         self.spawnLaunchpadObjects()
     
 
     def addObject(self, geometryData):
-        object = Object(geometryData, 0, 0)
+        object = Object(geometryData, self.initPosition[0], self.initPosition[1])
         object.pointUp()
         self.objects.append(object)
         return object
