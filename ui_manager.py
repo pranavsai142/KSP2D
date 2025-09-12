@@ -100,7 +100,7 @@ class UIManager:
     def _renderReadoutView(self, environmentObj, surface):
         overlay = pygame.Surface((self.readoutWidth, self.readoutHeight), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 0))
-        yPos = self.readoutPos[1] + 10
+        yPos = self.readoutPos[1] + 10 + self.labelFont.get_height() + 2  # Start lower to account for top label
         is_orbital = self.orbitalReadoutsShown and self.environment == "space"
         if is_orbital:
             labels = [
@@ -129,7 +129,7 @@ class UIManager:
             else:  # tunnel
                 labels = ["VEL X:", "VEL Z:", "ACC X:", "ACC Z:", "ROT ANG:", "AOA:"]
         num_items = len(labels)
-        spacing = (self.readoutHeight - 20) // num_items
+        spacing = (self.readoutHeight - 20 - self.labelFont.get_height()) // num_items  # Adjust spacing for labels
         wheel_offset = 5
         if self.environment in ["air", "space", "moon", "mars"] and not is_orbital:
             # Altitude indicator
@@ -242,8 +242,6 @@ class UIManager:
                     posX, posZ = obj.positionVector[0], obj.positionVector[1]
                     velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
                     if(self.environment in ["space"]):
-                        posX, posZ = obj.positionVector[0], obj.positionVector[1]
-                        velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
                         # Calculate the ground speed as the component of velocity that is perpendicular to the position vector
                         position = np.array([posX, posZ], dtype=float)
                         velocity = np.array([velX, velZ], dtype=float)
@@ -342,10 +340,10 @@ class UIManager:
                     labelText = self.labelFont.render(label, True, self.textColor)
                     label_width = labelText.get_width()
                     label_height = labelText.get_height()
-                    labelX = max(5, wheel_offset - label_width - 5)
-                    labelY = yPos + 2 - self.readoutPos[1]
+                    labelX = wheel_offset  # Align with digit wheels
+                    labelY = yPos - self.readoutPos[1] - label_height - 2  # Position above wheels
                     overlay.blit(labelText, (labelX, labelY))
-                    windowY = yPos + label_height + 8 - self.readoutPos[1]
+                    windowY = yPos - self.readoutPos[1]
                     windowX = wheel_offset
                     windowWidth = self.digitWidth * totalWheels
                     pygame.draw.rect(overlay, self.digitWindowColor, (windowX, windowY, windowWidth, self.digitHeight))

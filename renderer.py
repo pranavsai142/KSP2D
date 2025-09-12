@@ -356,44 +356,44 @@ class Renderer:
                 pygame.draw.circle(surface, self.groundColor, earthCenter, self.environmentObj.earthRadius * self.scaleX)
                 surface.set_clip(None)
                 # Orbital trajectory
-                if environmentObj.objects:
-                    obj = environmentObj.objects[0]
-                    a = getattr(obj, 'semimajor', 0)
-                    e = getattr(obj, 'eccentricity', 0)
-                    nu = getattr(obj, 'trueanomaly', 0)
-                    pos = np.array(obj.positionVector)
-                    r = np.linalg.norm(pos)
-                    if r > 0 and a > 0:
-                        phi = math.atan2(pos[1], pos[0])
-                        omega = phi - nu
-                        num_points = 100
-                        trajectory = []
-                        for i in range(num_points + 1):
-                            theta = 2 * math.pi * i / num_points
-                            r_theta = a * (1 - e**2) / (1 + e * math.cos(theta))
-                            tx = r_theta * math.cos(theta + omega)
-                            tz = r_theta * math.sin(theta + omega)
-                            trajectory.append((tx, tz))
-                        prev_screen = None
-                        for px, pz in trajectory:
-                            screen_pos = self._toScreenCoords(px, pz, isGlobalView=True, subDomainCenter=subDomainCenter)
-                            if prev_screen is not None:
-                                pygame.draw.line(surface, self.orbitColor, prev_screen, screen_pos, 1)
-                            prev_screen = screen_pos
-                        # Periapsis point
-                        r_peri = a * (1 - e)
-                        theta_peri = 0
-                        px_peri = r_peri * math.cos(theta_peri + omega)
-                        pz_peri = r_peri * math.sin(theta_peri + omega)
-                        screen_peri = self._toScreenCoords(px_peri, pz_peri, isGlobalView=True, subDomainCenter=subDomainCenter)
-                        pygame.draw.circle(surface, self.periColor, screen_peri, 8)
-                        # Apoapsis point
-                        r_apo = a * (1 + e)
-                        theta_apo = math.pi
-                        px_apo = r_apo * math.cos(theta_apo + omega)
-                        pz_apo = r_apo * math.sin(theta_apo + omega)
-                        screen_apo = self._toScreenCoords(px_apo, pz_apo, isGlobalView=True, subDomainCenter=subDomainCenter)
-                        pygame.draw.circle(surface, self.apoColor, screen_apo, 8)
+#                 if environmentObj.objects:
+#                     obj = environmentObj.objects[0]
+#                     a = getattr(obj, 'semimajor', 0)
+#                     e = getattr(obj, 'eccentricity', 0)
+#                     nu = getattr(obj, 'trueanomaly', 0)
+#                     pos = np.array(obj.positionVector)
+#                     r = np.linalg.norm(pos)
+#                     if r > 0 and a > 0:
+#                         phi = math.atan2(pos[1], pos[0])
+#                         omega = phi - nu
+#                         num_points = 100
+#                         trajectory = []
+#                         for i in range(num_points + 1):
+#                             theta = 2 * math.pi * i / num_points
+#                             r_theta = a * (1 - e**2) / (1 + e * math.cos(theta))
+#                             tx = r_theta * math.cos(theta + omega)
+#                             tz = r_theta * math.sin(theta + omega)
+#                             trajectory.append((tx, tz))
+#                         prev_screen = None
+#                         for px, pz in trajectory:
+#                             screen_pos = self._toScreenCoords(px, pz, isGlobalView=True, subDomainCenter=subDomainCenter)
+#                             if prev_screen is not None:
+#                                 pygame.draw.line(surface, self.orbitColor, prev_screen, screen_pos, 1)
+#                             prev_screen = screen_pos
+#                         # Periapsis point
+#                         r_peri = a * (1 - e)
+#                         theta_peri = 0
+#                         px_peri = r_peri * math.cos(theta_peri + omega)
+#                         pz_peri = r_peri * math.sin(theta_peri + omega)
+#                         screen_peri = self._toScreenCoords(px_peri, pz_peri, isGlobalView=True, subDomainCenter=subDomainCenter)
+#                         pygame.draw.circle(surface, self.periColor, screen_peri, 8)
+#                         # Apoapsis point
+#                         r_apo = a * (1 + e)
+#                         theta_apo = math.pi
+#                         px_apo = r_apo * math.cos(theta_apo + omega)
+#                         pz_apo = r_apo * math.sin(theta_apo + omega)
+#                         screen_apo = self._toScreenCoords(px_apo, pz_apo, isGlobalView=True, subDomainCenter=subDomainCenter)
+#                         pygame.draw.circle(surface, self.apoColor, screen_apo, 8)
 
             for terrainObject in environmentObj.terrainObjects:
                 screenPos = self._toScreenCoords(terrainObject["pos"][0], terrainObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
@@ -658,7 +658,7 @@ class Renderer:
         elif self.environment == "space":
             # Draw Earth in minimap
             earth_center = self._toScreenCoords(0, 0, isMinimapView=True)
-            scale = min(self.minimapWidth, self.minimapHeight) / (2 * max(self.environmentObj.earthRadius, getattr(environmentObj.objects[0], 'semimajor', self.environmentObj.earthRadius)))
+            scale = min(self.minimapWidth, self.minimapHeight) / (3 * max(self.environmentObj.earthRadius, getattr(environmentObj.objects[0], 'semimajor', self.environmentObj.earthRadius) * (1 + getattr(environmentObj.objects[0], 'eccentricity', 0))))
             earth_radius_screen = self.environmentObj.earthRadius * scale
             pygame.draw.circle(overlay, self.groundColor, earth_center, earth_radius_screen)
             # Orbital trajectory in minimap
@@ -705,21 +705,42 @@ class Renderer:
                         pygame.draw.circle(overlay, self.apoColor, screen_apo, 3)
 
         for obj in environmentObj.objects:
-            for x, z in zip(obj.geometry.pointXCoords, obj.geometry.pointZCoords):
+            # Transform local geometry points to global coordinates
+            orient = np.array(obj.orientationVector, dtype=float)
+            norm = np.sqrt(orient @ orient)
+            if norm == 0:
+                localXAxis = np.array([1.0, 0.0])
+                localZAxis = np.array([0.0, 1.0])
+            else:
+                localXAxis = orient / norm
+                localZAxis = np.array([localXAxis[1], -localXAxis[0]])
+            globalXCoords = []
+            globalZCoords = []
+            for xLocal, zLocal in zip(obj.geometry.pointXCoords, obj.geometry.pointZCoords):
+                globalPoint = xLocal * (-localXAxis) + zLocal * localZAxis + obj.positionVector
+                globalXCoords.append(globalPoint[0])
+                globalZCoords.append(globalPoint[1])
+            
+            # Draw geometry points
+            for x, z in zip(globalXCoords, globalZCoords):
                 if x == 0 and z == 0:
                     continue
                 screenPos = self._toScreenCoords(x, z, isMinimapView=True)
                 if (0 <= screenPos[0] <= self.minimapWidth and 
                     0 <= screenPos[1] <= self.minimapHeight):
                     pygame.draw.circle(overlay, self.pointColor, screenPos, 1)
+            
+            # Draw connection lines
             for element in obj.geometry.connectionMatrix:
-                x1, z1 = obj.geometry.pointXCoords[element[0]], obj.geometry.pointZCoords[element[0]]
-                x2, z2 = obj.geometry.pointXCoords[element[1]], obj.geometry.pointZCoords[element[1]]
+                x1, z1 = globalXCoords[element[0]], globalZCoords[element[0]]
+                x2, z2 = globalXCoords[element[1]], globalZCoords[element[1]]
                 if (x1 == 0 and z1 == 0) or (x2 == 0 and z2 == 0):
                     continue
                 start = self._toScreenCoords(x1, z1, isMinimapView=True)
                 end = self._toScreenCoords(x2, z2, isMinimapView=True)
                 pygame.draw.line(overlay, self.lineColor, start, end, 1)
+            
+            # Draw path history
             if hasattr(environmentObj, 'pathHistory'):
                 for pos in environmentObj.pathHistory:
                     if pos[0] == 0 and pos[1] == 0:
@@ -728,11 +749,14 @@ class Renderer:
                     if (0 <= screenPos[0] <= self.minimapWidth and 
                         0 <= screenPos[1] <= self.minimapHeight):
                         pygame.draw.circle(overlay, (255, 0, 0), screenPos, 1)
+            
+            # Draw spacecraft marker using positionVector
             markerPos = self._toScreenCoords(obj.positionVector[0], obj.positionVector[1], isMinimapView=True)
             if (0 <= markerPos[0] <= self.minimapWidth and 
                 0 <= markerPos[1] <= self.minimapHeight and 
                 not (obj.positionVector[0] == 0 and obj.positionVector[1] == 0)):
                 pygame.draw.circle(overlay, (255, 105, 180), markerPos, 3)
+        
         if self.environment == "pilot":
             for asteroid in environmentObj.asteroids:
                 screenPos = self._toScreenCoords(asteroid["pos"][0], asteroid["pos"][1], isMinimapView=True)
@@ -740,6 +764,7 @@ class Renderer:
                     0 <= screenPos[1] <= self.minimapHeight):
                     radius = asteroid["radius"] * (self.minimapWidth / self.deltaX)
                     pygame.draw.circle(overlay, self.asteroidColor, screenPos, max(2, radius))
+        
         surface.blit(overlay, self.minimapPos)
 
     def quit(self):

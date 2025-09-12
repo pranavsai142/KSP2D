@@ -482,7 +482,7 @@ class Object:
 #          If so, negate vertical velocity and set vertical position to ground.
         newDistanceFromEarthCenter = vecm.distance([0, 0], newPositionVector)
         if(newDistanceFromEarthCenter <= self.earthRadius):
-            print("ON THE GROUND")
+#             print("ON THE GROUND")
 #             Using self.unitPositionVector, cancel out the acceleration and velocity that is parallel to the position unit vector.
 #           PReserve the acceleration and velocity that is perpendicular ton the unitPositionVector
             unit_pos = np.array(self.positionUnitVector, dtype=float)
@@ -543,7 +543,7 @@ class Object:
         self.orbitalPeriod = timeAnomaliesEarth[0]
         self.timeSincePeriapsis = timeAnomaliesEarth[1]
         self.timeToPeriapsis = timeAnomaliesEarth[2]
-        print(self.latLonHeight)
+#         print(self.latLonHeight)
             
             
                         
