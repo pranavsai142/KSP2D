@@ -9,7 +9,8 @@ def unit_vector(vec):
 	return vec/mag
 	
 def mag(vec):
-	return np.sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
+    return np.linalg.norm(vec)
+# 	return np.sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
 	
 def dot(vec1, vec2):
 	return (vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2])

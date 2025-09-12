@@ -15,7 +15,7 @@ MAX_FRAMES = 10000
 PLOT_FRAMES = False
 GRAVITY = 9.81
 GRAVITY_VECTOR = np.array([0, -GRAVITY])
-DELTA_T = 0.01
+DELTA_T = datetime.timedelta(microseconds=10000)
 MAX_VELOCITY = 1000000
 MAX_ACCELERATION = 1000000
 THROTTLE_DELTA = 1.0
@@ -38,11 +38,15 @@ LAUNCHPAD_X_COORDINATE = -1
 # To inititalize environment, take as input the latitude at which to launch from. Do not have it configured to change latitude
 # Earth will be drawn by renderer as a circle with the proper radius accounting for squishing factor
 
+# Define the gravity vector to point to the center of earth
+# Find the ground condition based on the radius of earth
+# Change how the UI shows altitude by calculating height above earths radius
+
 class Space:
     LAUNCHPAD_SEGMENT_WIDTH = 1
     LAUNCHPAD_SEGMENT_HEIGHT = 1
     
-    def __init__(self, launchpadHeight=30, latitude=28.3968, longitude=80.5288, datetime=datetime.datetime(year=1995, month=11, day=18, hour=12, minute=46, second=0)):
+    def __init__(self, launchpadHeight=30, latitude=28.3968, longitude=-80.5288, datetime=datetime.datetime(year=1995, month=11, day=18, hour=12, minute=46, second=0)):
         print("Initializing Space Environment")
         self.launchpadHeight = launchpadHeight
         self.objects = []
@@ -65,8 +69,8 @@ class Space:
         self.cloudObjects = []
         self.launchpadObjects = []
         
-        self.latitude = latitude
-        self.longitude = longitude
+        self.latitude = np.radians(latitude)
+        self.longitude = np.radians(longitude)
         self.datetime = datetime
         
         
@@ -76,7 +80,7 @@ class Space:
 #             const.EARTH_FLATTEN_CONST, 
 #             0)
             
-        self.initPosition = orbitm.to_eci_coordinates(
+        self.initPositionECI = orbitm.to_eci_coordinates(
                     self.latitude, 
                     self.longitude, 
                     0, 
@@ -84,7 +88,7 @@ class Space:
                     const.EARTH_FLATTEN_CONST, 
                     const.EARTH_A_RADIUS)
         self.earthCenter = [0, 0]
-        self.earthRadius = vecm.distance([0, 0], [self.initPosition[0], self.initPosition[1]])
+        self.earthRadius = vecm.distance([0, 0], [self.initPositionECI[0], self.initPositionECI[1]])
 #         print(self.earthRadius)
             
         self.spawnTerrainObjects()
@@ -93,7 +97,7 @@ class Space:
     
 
     def addObject(self, geometryData):
-        object = Object(geometryData, self.initPosition[0], self.initPosition[1])
+        object = Object(geometryData, self.initPositionECI, self.earthRadius, self.datetime)
         object.pointUp()
         self.objects.append(object)
         return object
@@ -174,11 +178,11 @@ class Space:
                 
     def advanceTime(self):
         for object in self.objects:
-            object.updatePosition()
+            object.updatePosition(self.datetime)
             self.pathHistory.append(object.positionVector.copy())
             if len(self.pathHistory) > self.maxHistoryLength:
                 self.pathHistory.pop(0)
-            if self.isOutsideBounds(object) or self.frameNumber >= MAX_FRAMES:
+            if self.isOutsideBounds(object):
                 print("CRASH!", object.positionVector, self.isOutsideBounds(object))
                 if PLOT_FRAMES:
 #                     self.createMovie("ocean_global_forces.gif", self.frameFilenames)
@@ -226,12 +230,13 @@ class Space:
                         self.addedMasses.pop(0)
                 self.frameNumber += 1
         self.updateClouds()
+        self.datetime = self.datetime + DELTA_T
                 
 #                 
     def updateClouds(self):
         for cloudObject in self.cloudObjects:
-            cloudObject["pos"][0] += cloudObject["vel"][0] * DELTA_T
-            cloudObject["pos"][1] += cloudObject["vel"][1] * DELTA_T
+            cloudObject["pos"][0] += cloudObject["vel"][0] * DELTA_T.total_seconds()
+            cloudObject["pos"][1] += cloudObject["vel"][1] * DELTA_T.total_seconds()
             if cloudObject["pos"][0] < -self.deltaX/2 or cloudObject["pos"][0] > self.deltaX/2:
                 cloudObject["vel"][0] = -cloudObject["vel"][0]
             if cloudObject["pos"][1] < -self.deltaZ or cloudObject["pos"][1] > CLOUD_OBJECTS_MINIMUM_Z_COORDINATE:
@@ -341,17 +346,21 @@ class Space:
         plt.close()
 
 class Object:
-    def __init__(self, geometryData, positionX, positionZ):
+    def __init__(self, geometryData, positionECI, earthRadius, datetime):
         self.geometryData = geometryData
         self.geometry = self.geometryData.geometry
         self.mass = geometryData.mass
-        self.positionVector = np.array([positionX, positionZ], dtype=np.float64)
+        self.positionVector = np.array([positionECI[0], positionECI[1]], dtype=np.float64)
+        self.positionECI = positionECI
+        self.velocityECI = [0, 0, 0]
+        self.positionUnitVector = self.positionVector / np.linalg.norm(self.positionVector)
         self.velocityVector = np.array([0.0, 0.0], dtype=np.float64)
         self.accelerationVector = GRAVITY_VECTOR / self.mass
         self.orientationVector = np.array([0.0, 0.0], dtype=np.float64)
         self.forceVector = np.array([0.0, 0.0], dtype=np.float64)
         self.totalForceVector = np.array([0.0, 0.0], dtype=np.float64)
         self.thrustForce = np.array([0, 0], dtype=np.float64)
+        self.gravityVector = np.array([0, 0], dtype=np.float64)
         self.engineThrottle = 0.0
         self.addedMass = 0.0
 #         Modifiable fields
@@ -359,7 +368,31 @@ class Object:
         self.deltaRotation = 0.1
         self.rotationMin = np.radians(-15)
         self.rotationMax = np.radians(15)
+        self.earthRadius = earthRadius
+        self.datetime = datetime
+        self.latLonHeight = orbitm.to_lat_long_height_from_eci(
+            self.positionECI[0], 
+            self.positionECI[1], 
+            self.positionECI[2], 
+            self.datetime, 
+            const.EARTH_FLATTEN_CONST, 
+            const.EARTH_A_RADIUS)
+        self.radiusToEarthCenter = 0
+        self.semimajor = 0
+        self.eccentricity = 0
+        self.apoapsis = 0
+        self.periapsis = 0
+        self.flightAngle = 0
+        self.inclination = 0
+        self.trueanomaly = 0
+        self.orbitalPeriod = 0
+        self.timeSincePeriapsis = 0
+        self.timeToPeriapsis = 0
 
+    def setGravityVector(self):
+        self.positionUnitVector = self.positionVector / np.linalg.norm(self.positionVector)
+        self.gravityVector = GRAVITY * -self.positionUnitVector
+    
     def rotateRight(self):
         if self.geometryData.hasTrailingEdge:
             currentAngle = np.arctan2(self.orientationVector[1], self.orientationVector[0])
@@ -408,7 +441,7 @@ class Object:
         self.orientationVector = np.array([1.0, 0.0], dtype=np.float64)
         
     def pointUp(self):
-        self.orientationVector = np.array([0.0, 1.0], dtype=np.float64)
+        self.orientationVector = self.positionUnitVector
 
     def capAcceleration(self):
         self.accelerationVector = np.clip(self.accelerationVector, -MAX_ACCELERATION, MAX_ACCELERATION)
@@ -416,12 +449,16 @@ class Object:
     def capVelocity(self):
         self.velocityVector = np.clip(self.velocityVector, -MAX_VELOCITY, MAX_VELOCITY)
 
-    def updatePosition(self):
+    def updatePosition(self, datetime):
+        self.datetime = datetime
+        rho = const.getDensity(self.latLonHeight[2])
+        self.geometry.updateDensity(rho)
+        self.setGravityVector()
         self.updateForce(self.velocityVector, self.accelerationVector)
 #         print("self.forceVector", self.forceVector)
 #         modifiedForceVector = [self.forceVector[0], self.forceVector[1] * -1]
 #         totalForceVector = self.forceVector + ((self.mass + self.addedMass) * GRAVITY_VECTOR) + self.thrustForce
-        self.totalForceVector = self.forceVector + ((self.mass) * GRAVITY_VECTOR) + self.thrustForce
+        self.totalForceVector = self.forceVector + ((self.mass) * self.gravityVector) + self.thrustForce
 #         Apply normal force if on the ground. (Zero z component of force)
 #         if(self.positionVector[1] <= MINIMUM_Z_COORDINATE):
 #             totalForceVector[1] = 0
@@ -429,18 +466,87 @@ class Object:
 #         self.accelerationVector = totalForceVector / (self.mass + self.addedMass)
         self.accelerationVector = self.totalForceVector / (self.mass)
         self.capAcceleration()
-        self.velocityVector += self.accelerationVector * DELTA_T
+        self.velocityVector += self.accelerationVector * DELTA_T.total_seconds()
         self.capVelocity()
-        newPositionVector = self.positionVector + (self.velocityVector * DELTA_T)
+        newPositionVector = self.positionVector + (self.velocityVector * DELTA_T.total_seconds())
+        newPositionECI = [newPositionVector[0], newPositionVector[1], self.positionECI[2]]
+        latLonHeight = orbitm.to_lat_long_height_from_eci(
+            newPositionECI[0], 
+            newPositionECI[1], 
+            newPositionECI[2], 
+            self.datetime, 
+            const.EARTH_FLATTEN_CONST, 
+            const.EARTH_A_RADIUS)
+#         print(latLonHeight)
 #         Apply logic to detect if new postion is still on ground.
 #          If so, negate vertical velocity and set vertical position to ground.
-        if(newPositionVector[1] <= MINIMUM_Z_COORDINATE):
-            self.accelerationVector[1] = 0
-            self.velocityVector[1] = 0
-            self.positionVector[1] = MINIMUM_Z_COORDINATE
-            self.positionVector[0] = newPositionVector[0]
+        newDistanceFromEarthCenter = vecm.distance([0, 0], newPositionVector)
+        if(newDistanceFromEarthCenter <= self.earthRadius):
+            print("ON THE GROUND")
+#             Using self.unitPositionVector, cancel out the acceleration and velocity that is parallel to the position unit vector.
+#           PReserve the acceleration and velocity that is perpendicular ton the unitPositionVector
+            unit_pos = np.array(self.positionUnitVector, dtype=float)
+            norm = np.sqrt(unit_pos @ unit_pos)
+            if norm > 0:
+                unit_pos = unit_pos / norm  # Ensure unit vector is normalized
+                # Process velocity vector
+                velocity = np.array(self.velocityVector, dtype=float)
+                parallel_vel = (velocity @ unit_pos) * unit_pos  # Parallel component
+                perpendicular_vel = velocity - parallel_vel  # Perpendicular component
+                self.velocityVector = list(perpendicular_vel)
+                # Process acceleration vector
+                acceleration = np.array(self.accelerationVector, dtype=float)
+                parallel_acc = (acceleration @ unit_pos) * unit_pos  # Parallel component
+                perpendicular_acc = acceleration - parallel_acc  # Perpendicular component
+                self.accelerationVector = list(perpendicular_acc)
+            else:
+                # Fallback if unitPositionVector is zero
+                self.velocityVector = [0, 0]
+                self.accelerationVector = [0, 0]
+            self.velocityECI = [self.velocityVector[0], self.velocityVector[1], 0]
+
+            
+#           Set the position vector to the earth surface
+            #           How to find the earth surface?, like below
+            surfacePositionECICoordinates = orbitm.to_eci_coordinates(
+                latLonHeight[0], 
+                latLonHeight[1], 
+                0, 
+                datetime, 
+                const.EARTH_FLATTEN_CONST, 
+                const.EARTH_A_RADIUS)
+            self.positionVector[0] = surfacePositionECICoordinates[0]
+            self.positionVector[1] = surfacePositionECICoordinates[1]
+            if(surfacePositionECICoordinates == self.positionECI).all():
+                self.latLonHeight = latLonHeight
+            else:
+                self.latLonHeight[2] = 0
+            self.positionECI = surfacePositionECICoordinates
         else:
             self.positionVector = newPositionVector
+            self.positionECI = newPositionECI
+            self.velocityECI = [self.velocityVector[0], self.velocityVector[1], 0]
+            self.latLonHeight = latLonHeight
+#         Find orbital state
+        self.radiusToEarthCenter = vecm.mag(self.positionECI)
+        velocityMag = vecm.mag(self.velocityECI)
+        self.semimajor = orbitm.find_semimajorly(self.radiusToEarthCenter, velocityMag, const.EARTH_STANDARD_GRAV)
+        eccentricityEarthVector = orbitm.find_eccentricity_vector(self.positionECI, self.velocityECI, const.EARTH_STANDARD_GRAV)
+        self.eccentricity = vecm.mag(eccentricityEarthVector)
+        apoPeri = orbitm.find_apo_peri(self.eccentricity, self.semimajor)
+        self.apoapsis = apoPeri[0]
+        self.periapsis = apoPeri[1]
+        self.flightAngle = orbitm.find_flight_angle_state_vectors(self.positionECI, self.velocityECI)
+        self.inclination = orbitm.extrapolate_inclination(self.positionECI, self.velocityECI)
+        self.trueanomaly = orbitm.find_true_anomaly(self.positionECI, self.velocityECI, eccentricityEarthVector)
+        timeAnomaliesEarth = orbitm.find_time_anomalies(self.semimajor, self.trueanomaly, const.EARTH_STANDARD_GRAV)
+        self.orbitalPeriod = timeAnomaliesEarth[0]
+        self.timeSincePeriapsis = timeAnomaliesEarth[1]
+        self.timeToPeriapsis = timeAnomaliesEarth[2]
+        print(self.latLonHeight)
+            
+            
+                        
 
     def updateForce(self, velocityVector, accelerationVector):
         self.velocityVector = velocityVector

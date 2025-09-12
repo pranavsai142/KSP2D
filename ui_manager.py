@@ -2,14 +2,14 @@ import pygame
 import numpy as np
 import math
 import random
+import datetime
+
+import Constants as const
 
 class UIManager:
     def __init__(self, windowWidth, windowHeight):
         self.windowWidth = windowWidth
         self.windowHeight = windowHeight
-        self.digitHeight = 20
-        self.digitFont = pygame.font.SysFont("courier", 16, bold=True)
-        self.labelFont = pygame.font.SysFont("ocraextended", 40, bold=False)
         self.textColor = (0, 0, 0)
         self.digitBgColor = (50, 50, 50)
         self.digitColor = (255, 255, 255)
@@ -17,6 +17,7 @@ class UIManager:
         self.orientBgColor = (200, 200, 200, 128)
         self.hiddenUIShown = False
         self.debugReadoutsShown = False
+        self.orbitalReadoutsShown = False
         self.debugHistory = {}
         self.debugSurface = None
         self.stars = []
@@ -45,26 +46,26 @@ class UIManager:
         self.spaceParams = {
             "deltaX": 1000.0,
             "deltaZ": 10000.0,
-            "enginePower": 5000,
+            "enginePower": 500000,
             "deltaRotation": 0.1,
-            "rotationMin": -180,
-            "rotationMax": 180,
+            "rotationMin": -360,
+            "rotationMax": 360,
         }
         self.moonParams = {
             "deltaX": 1000.0,
             "deltaZ": 10000.0,
             "enginePower": 5000,
             "deltaRotation": 0.1,
-            "rotationMin": -180,
-            "rotationMax": 180,
+            "rotationMin": -360,
+            "rotationMax": 360,
         }
         self.marsParams = {
             "deltaX": 1000.0,
             "deltaZ": 10000.0,
             "enginePower": 5000,
             "deltaRotation": 0.1,
-            "rotationMin": -180,
-            "rotationMax": 180,
+            "rotationMin": -360,
+            "rotationMax": 360,
         }
         # Define atmosphere colors to match Renderer
         self.atmosphereColors = [
@@ -100,25 +101,48 @@ class UIManager:
         overlay = pygame.Surface((self.readoutWidth, self.readoutHeight), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 0))
         yPos = self.readoutPos[1] + 10
-        if self.environment in ["ocean"]:
-            labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "ROT ANG:", "AOA:"]
-        elif self.environment in ["pilot"]:
-            labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "THRUST:", "ROT ANG:", "AOA:"]
-        elif self.environment in ["air", "space", "moon", "mars"]:
-            labels = ["SPEED:", "ALT:", "AIRSPD:", "PWR", "AOA:"]
-        else:  # tunnel
-            labels = ["VEL X:", "VEL Z:", "ACC X:", "ACC Z:", "ROT ANG:", "AOA:"]
-        spacing = (self.readoutHeight - 20) // len(labels)
+        is_orbital = self.orbitalReadoutsShown and self.environment == "space"
+        if is_orbital:
+            labels = [
+                "Latitude:",
+                "Longitude:",
+                "Altitude:",
+                "Radius to Earth Center:",
+                "Semimajor Axis:",
+                "Eccentricity:",
+                "Apoapsis:",
+                "Periapsis:",
+                "Flight Angle:",
+                "Inclination:",
+                "True Anomaly:",
+                "Orbital Period:",
+                "Time Since Periapsis:",
+                "Time To Periapsis:"
+            ]
+        else:
+            if self.environment in ["ocean"]:
+                labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "ROT ANG:", "AOA:"]
+            elif self.environment in ["pilot"]:
+                labels = ["POS X:", "POS Z:", "VEL X:", "VEL Z:", "THRUST:", "ROT ANG:", "AOA:"]
+            elif self.environment in ["air", "space", "moon", "mars"]:
+                labels = ["SPEED:", "ALT:", "AIRSPD:", "PWR", "AOA:"]
+            else:  # tunnel
+                labels = ["VEL X:", "VEL Z:", "ACC X:", "ACC Z:", "ROT ANG:", "AOA:"]
+        num_items = len(labels)
+        spacing = (self.readoutHeight - 20) // num_items
         wheel_offset = 5
-        if self.environment in ["air", "space", "moon", "mars"]:
+        if self.environment in ["air", "space", "moon", "mars"] and not is_orbital:
             # Altitude indicator
             if len(environmentObj.objects) > 0:
                 obj = environmentObj.objects[0]
                 deltaZ = (self.airParams["deltaZ"] if self.environment == "air" else
-                          self.spaceParams["deltaZ"] if self.environment == "space" else
+                          const.VON_KARMAN_LINE if self.environment == "space" else
                           self.moonParams["deltaZ"] if self.environment == "moon" else
                           self.marsParams["deltaZ"])
-                altitude = obj.positionVector[1]
+                if(self.environment == "space"):
+                    altitude = obj.latLonHeight[2]
+                else:
+                    altitude = obj.positionVector[1]
                 bar_x = 5
                 bar_y = 50
                 bar_width = 25
@@ -169,145 +193,203 @@ class UIManager:
             wheel_offset = bar_x + bar_width + 20  # Adjust spacing
 
         for obj in environmentObj.objects:
-            if self.environment == "ocean":
-                posX, posZ = obj.positionVector[0], obj.positionVector[1]
-                velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                values = [posX, posZ, velX, velZ]
-            elif self.environment == "pilot":
-                posX, posZ = obj.positionVector[0], obj.positionVector[1]
-                velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                thrust = np.linalg.norm(obj.thrustForce)
-                values = [posX, posZ, velX, velZ, thrust]
-            elif self.environment in ["air", "space", "moon", "mars"]:
-                posX, posZ = obj.positionVector[0], obj.positionVector[1]
-                velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                ground_speed = abs(velX)
-                altitude = posZ
-                airspeed = np.sqrt(velX**2 + velZ**2)
-                throttle = obj.engineThrottle
-                values = [ground_speed, altitude, airspeed, throttle]
-            elif self.environment == "tunnel":
-                velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
-                accX, accZ = obj.accelerationVector[0], obj.accelerationVector[1]
-                velX, velZ = -velX, -velZ
-                accX, accZ = -accX, -accZ
-                accX = accX * 10
-                accZ = accZ * 10
-                values = [velX, velZ, accX, accZ]
-            orient = np.array(obj.orientationVector, dtype=float)
-            refVector = np.array([0, -1], dtype=float)
-            normOrient = np.linalg.norm(orient)
-            normRef = np.linalg.norm(refVector)
-            if normOrient > 0 and normRef > 0:
-                cosTheta = np.dot(orient, refVector) / (normOrient * normRef)
-                cosTheta = np.clip(cosTheta, -1.0, 1.0)
-                rotAngle = math.degrees(math.acos(cosTheta))
-                cross = orient[0] * refVector[1] - orient[1] * refVector[0]
-                if cross < 0:
-                    rotAngle = -rotAngle
-                rotAngle = ((rotAngle + 180) % 360) - 180
+            if is_orbital:
+                lat, lon, height = obj.latLonHeight
+                values = [
+                    math.degrees(lat),
+                    math.degrees(lon),
+                    height / 1000,
+                    getattr(obj, 'radiusToEarthCenter', 0) / 1000,
+                    getattr(obj, 'semimajor', 0) / 1000,
+                    getattr(obj, 'eccentricity', 0),
+                    getattr(obj, 'apoapsis', 0) / 1000,
+                    getattr(obj, 'periapsis', 0) / 1000,
+                    getattr(obj, 'flightAngle', 0),
+                    math.degrees(getattr(obj, 'inclination', 0)),
+                    math.degrees(getattr(obj, 'trueanomaly', 0)),
+                    getattr(obj, 'orbitalPeriod', 0) / 60,
+                    getattr(obj, 'timeSincePeriapsis', 0) / 60,
+                    getattr(obj, 'timeToPeriapsis', 0) / 60
+                ]
+                formats = {
+                    "Eccentricity:": "{:.4f}",
+                }
+                default_format = "{:.2f}"
+                for idx, (label, value) in enumerate(zip(labels, values)):
+                    if(type(value) is datetime.timedelta):
+                        value = value.total_seconds()
+                    labelText = self.labelFont.render(label, True, self.textColor)
+                    labelX = wheel_offset
+                    labelY = yPos - self.readoutPos[1]
+                    overlay.blit(labelText, (labelX, labelY))
+                    val_str = formats.get(label, default_format).format(value)
+                    valueText = self.digitFont.render(val_str, True, self.digitColor)
+                    valueY = yPos + self.labelFont.get_height() - self.readoutPos[1]
+                    valueX = wheel_offset + 10
+                    overlay.blit(valueText, (valueX, valueY))
+                    yPos += spacing
             else:
-                rotAngle = 0.0
-            if self.environment not in ["air", "space", "moon", "mars"]:
-                values.append(rotAngle)
-            vel = np.array(obj.velocityVector, dtype=float)
-            normVel = np.linalg.norm(vel)
-            normOrient = np.linalg.norm(orient)
-            if normOrient > 0 and normVel > 0:
-                orientNorm = orient / normOrient
-                velNorm = vel / normVel
-                cosTheta = np.dot(orientNorm, velNorm)
-                cosTheta = np.clip(cosTheta, -1.0, 1.0)
-                aoa = math.degrees(math.acos(cosTheta))
-                cross = orientNorm[0] * velNorm[1] - orientNorm[1] * velNorm[0]
-                if cross < 0:
-                    aoa = -aoa
-                aoa = ((aoa + 180) % 360) - 180
-                key = f"{id(obj)}_AoA"
-                if key in self.prevAoa:
-                    aoa = self.prevAoa[key] + self.smoothingFactor * (aoa - self.prevAoa[key])
-                self.prevAoa[key] = aoa
-            else:
-                aoa = 0.0
-            values.append(aoa)
-            for idx, (label, value) in enumerate(zip(labels, values)):
-                key = f"{id(obj)}_{label}_value"
-                if key not in self.prevValues:
-                    self.prevValues[key] = value
-                smoothedValue = self.prevValues[key] + self.smoothingFactor * (value - self.prevValues[key])
-                self.prevValues[key] = smoothedValue
-                value = smoothedValue
-                numDigits = 3
-                if label in ["AOA:"]:
-                    maxValue = 180
-                    minValue = -180
-                    value = max(min(value, maxValue), minValue)
-                    valueStr = f"{abs(int(value)):03d}"
-                else:
-                    maxValue = 999
-                    minValue = -999
-                    value = max(min(value, maxValue), minValue)
-                    absValue = abs(value)
-                    hundreds = int(absValue // 100) % 10
-                    tens = int(absValue // 10) % 10
-                    ones = int(absValue) % 10
-                    valueStr = f"{hundreds:01d}{tens:01d}{ones:01d}"
-                signIdx = 0 if value >= 0 else 1
-                totalWheels = 4
-                key = f"{id(obj)}_{label}"
-                if key not in self.wheelOffsets:
-                    self.wheelOffsets[key] = [0] * totalWheels
-                if key not in self.animationFrames:
-                    self.animationFrames[key] = [0] * totalWheels
-                labelText = self.labelFont.render(label, True, self.textColor)
-                labelX = wheel_offset
-                labelY = yPos + 2 - self.readoutPos[1]
-                overlay.blit(labelText, (labelX, labelY))
-                windowY = yPos + 50 - self.readoutPos[1]
-                windowX = wheel_offset
-                windowWidth = self.digitWidth * totalWheels
-                pygame.draw.rect(overlay, self.digitWindowColor, (windowX, windowY, windowWidth, self.digitHeight))
-                if self.environment == "tunnel" and label in ["ACC X:", "ACC Z:"]:
-                    decimalX = windowX + self.digitWidth * 3
-                    decimalY = windowY + self.digitHeight - 3
-                    pygame.draw.circle(overlay, self.digitColor, (decimalX, decimalY), 1)
-                wheelsToDraw = [(self.signWheel, signIdx, 2)]
-                for i, digit in enumerate(valueStr):
-                    wheelsToDraw.append((self.digitWheels[i], int(digit), 10))
-                for i, (wheel, targetDigit, numPositions) in enumerate(wheelsToDraw):
-                    xPos = windowX + i * self.digitWidth
-                    currentOffset = self.wheelOffsets[key][i]
-                    targetOffset = targetDigit * self.digitHeight
-                    diff = targetOffset - currentOffset
-                    totalHeight = self.digitHeight * numPositions
-                    if diff > totalHeight / 2:
-                        diff -= totalHeight
-                    elif diff < -totalHeight / 2:
-                        diff += totalHeight
-                    if diff != 0:
-                        self.animationFrames[key][i] += 1
-                        step = self.animationSpeed if diff > 0 else -self.animationSpeed
-                        currentOffset += step
-                        if abs(currentOffset - targetOffset) < self.animationSpeed or self.animationFrames[key][i] >= self.animationDuration:
-                            currentOffset = targetOffset
-                            self.animationFrames[key][i] = 0
-                        currentOffset = currentOffset % totalHeight
-                        if currentOffset < 0:
-                            currentOffset += totalHeight
+                if self.environment == "ocean":
+                    posX, posZ = obj.positionVector[0], obj.positionVector[1]
+                    velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
+                    values = [posX, posZ, velX, velZ]
+                elif self.environment == "pilot":
+                    posX, posZ = obj.positionVector[0], obj.positionVector[1]
+                    velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
+                    thrust = np.linalg.norm(obj.thrustForce)
+                    values = [posX, posZ, velX, velZ, thrust]
+                elif self.environment in ["air", "space", "moon", "mars"]:
+                    posX, posZ = obj.positionVector[0], obj.positionVector[1]
+                    velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
+                    if(self.environment in ["space"]):
+                        posX, posZ = obj.positionVector[0], obj.positionVector[1]
+                        velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
+                        # Calculate the ground speed as the component of velocity that is perpendicular to the position vector
+                        position = np.array([posX, posZ], dtype=float)
+                        velocity = np.array([velX, velZ], dtype=float)
+                        pos_magnitude_sq = position @ position  # Squared magnitude of position vector
+                        if pos_magnitude_sq > 0:
+                            # Compute parallel component: (v · p / ||p||^2) * p
+                            parallel_scalar = (velocity @ position) / pos_magnitude_sq
+                            parallel_vel = parallel_scalar * position
+                            # Compute perpendicular component: v - v_parallel
+                            perpendicular_vel = velocity - parallel_vel
+                            # Ground speed is the magnitude of the perpendicular component
+                            ground_speed = np.sqrt(perpendicular_vel @ perpendicular_vel)
+                        else:
+                            # If position vector is zero, ground speed is 0
+                            ground_speed = 0.0
+                        altitude = obj.latLonHeight[2]
                     else:
-                        self.animationFrames[key][i] = 0
-                    self.wheelOffsets[key][i] = currentOffset
-                    wheelPos = windowY - currentOffset
-                    clipRect = pygame.Rect(xPos, windowY, self.digitWidth, self.digitHeight)
-                    overlay.set_clip(clipRect)
-                    overlay.blit(wheel, (xPos, wheelPos))
-                    overlay.blit(wheel, (xPos, wheelPos - totalHeight))
-                    overlay.blit(wheel, (xPos, wheelPos + totalHeight))
-                    overlay.set_clip(None)
-                pygame.draw.rect(overlay, self.textColor, (windowX, windowY, windowWidth, self.digitHeight), 1)
-                yPos += spacing
+                        ground_speed = abs(velX)
+                        altitude = posZ
+                    airspeed = np.sqrt(velX**2 + velZ**2)
+                    throttle = obj.engineThrottle
+                    values = [ground_speed, altitude, airspeed, throttle]
+                elif self.environment == "tunnel":
+                    velX, velZ = obj.velocityVector[0], obj.velocityVector[1]
+                    accX, accZ = obj.accelerationVector[0], obj.accelerationVector[1]
+                    velX, velZ = -velX, -velZ
+                    accX, accZ = -accX, -accZ
+                    accX = accX * 10
+                    accZ = accZ * 10
+                    values = [velX, velZ, accX, accZ]
+                orient = np.array(obj.orientationVector, dtype=float)
+                refVector = np.array([0, -1], dtype=float)
+                normOrient = np.linalg.norm(orient)
+                normRef = np.linalg.norm(refVector)
+                if normOrient > 0 and normRef > 0:
+                    cosTheta = np.dot(orient, refVector) / (normOrient * normRef)
+                    cosTheta = np.clip(cosTheta, -1.0, 1.0)
+                    rotAngle = math.degrees(math.acos(cosTheta))
+                    cross = orient[0] * refVector[1] - orient[1] * refVector[0]
+                    if cross < 0:
+                        rotAngle = -rotAngle
+                    rotAngle = ((rotAngle + 180) % 360) - 180
+                else:
+                    rotAngle = 0.0
+                if self.environment not in ["air", "space", "moon", "mars"]:
+                    values.append(rotAngle)
+                vel = np.array(obj.velocityVector, dtype=float)
+                normVel = np.linalg.norm(vel)
+                normOrient = np.linalg.norm(orient)
+                if normOrient > 0 and normVel > 0:
+                    orientNorm = orient / normOrient
+                    velNorm = vel / normVel
+                    cosTheta = np.dot(orientNorm, velNorm)
+                    cosTheta = np.clip(cosTheta, -1.0, 1.0)
+                    aoa = math.degrees(math.acos(cosTheta))
+                    cross = orientNorm[0] * velNorm[1] - orientNorm[1] * velNorm[0]
+                    if cross < 0:
+                        aoa = -aoa
+                    aoa = ((aoa + 180) % 360) - 180
+                    key = f"{id(obj)}_AoA"
+                    if key in self.prevAoa:
+                        aoa = self.prevAoa[key] + self.smoothingFactor * (aoa - self.prevAoa[key])
+                    self.prevAoa[key] = aoa
+                else:
+                    aoa = 0.0
+                values.append(aoa)
+                for idx, (label, value) in enumerate(zip(labels, values)):
+                    key = f"{id(obj)}_{label}_value"
+                    if key not in self.prevValues:
+                        self.prevValues[key] = value
+                    smoothedValue = self.prevValues[key] + self.smoothingFactor * (value - self.prevValues[key])
+                    self.prevValues[key] = smoothedValue
+                    value = smoothedValue
+                    numDigits = 3
+                    if label in ["AOA:"]:
+                        maxValue = 180
+                        minValue = -180
+                        value = max(min(value, maxValue), minValue)
+                        valueStr = f"{abs(int(value)):03d}"
+                    else:
+                        maxValue = 999
+                        minValue = -999
+                        value = max(min(value, maxValue), minValue)
+                        absValue = abs(value)
+                        hundreds = int(absValue // 100) % 10
+                        tens = int(absValue // 10) % 10
+                        ones = int(absValue) % 10
+                        valueStr = f"{hundreds:01d}{tens:01d}{ones:01d}"
+                    signIdx = 0 if value >= 0 else 1
+                    totalWheels = 4
+                    key = f"{id(obj)}_{label}"
+                    if key not in self.wheelOffsets:
+                        self.wheelOffsets[key] = [0] * totalWheels
+                    if key not in self.animationFrames:
+                        self.animationFrames[key] = [0] * totalWheels
+                    labelText = self.labelFont.render(label, True, self.textColor)
+                    label_width = labelText.get_width()
+                    label_height = labelText.get_height()
+                    labelX = max(5, wheel_offset - label_width - 5)
+                    labelY = yPos + 2 - self.readoutPos[1]
+                    overlay.blit(labelText, (labelX, labelY))
+                    windowY = yPos + label_height + 8 - self.readoutPos[1]
+                    windowX = wheel_offset
+                    windowWidth = self.digitWidth * totalWheels
+                    pygame.draw.rect(overlay, self.digitWindowColor, (windowX, windowY, windowWidth, self.digitHeight))
+                    if self.environment == "tunnel" and label in ["ACC X:", "ACC Z:"]:
+                        decimalX = windowX + self.digitWidth * 3
+                        decimalY = windowY + self.digitHeight - 3
+                        pygame.draw.circle(overlay, self.digitColor, (decimalX, decimalY), 1)
+                    wheelsToDraw = [(self.signWheel, signIdx, 2)]
+                    for i, digit in enumerate(valueStr):
+                        wheelsToDraw.append((self.digitWheels[i], int(digit), 10))
+                    for i, (wheel, targetDigit, numPositions) in enumerate(wheelsToDraw):
+                        xPos = windowX + i * self.digitWidth
+                        currentOffset = self.wheelOffsets[key][i]
+                        targetOffset = targetDigit * self.digitHeight
+                        diff = targetOffset - currentOffset
+                        totalHeight = self.digitHeight * numPositions
+                        if diff > totalHeight / 2:
+                            diff -= totalHeight
+                        elif diff < -totalHeight / 2:
+                            diff += totalHeight
+                        if diff != 0:
+                            self.animationFrames[key][i] += 1
+                            step = self.animationSpeed if diff > 0 else -self.animationSpeed
+                            currentOffset += step
+                            if abs(currentOffset - targetOffset) < self.animationSpeed or self.animationFrames[key][i] >= self.animationDuration:
+                                currentOffset = targetOffset
+                                self.animationFrames[key][i] = 0
+                            currentOffset = currentOffset % totalHeight
+                            if currentOffset < 0:
+                                currentOffset += totalHeight
+                        else:
+                            self.animationFrames[key][i] = 0
+                        self.wheelOffsets[key][i] = currentOffset
+                        wheelPos = windowY - currentOffset
+                        clipRect = pygame.Rect(xPos, windowY, self.digitWidth, self.digitHeight)
+                        overlay.set_clip(clipRect)
+                        overlay.blit(wheel, (xPos, wheelPos))
+                        overlay.blit(wheel, (xPos, wheelPos - totalHeight))
+                        overlay.blit(wheel, (xPos, wheelPos + totalHeight))
+                        overlay.set_clip(None)
+                    pygame.draw.rect(overlay, self.textColor, (windowX, windowY, windowWidth, self.digitHeight), 1)
+                    yPos += spacing
             # STALL indicator for air/space/moon/mars - bottom center
-            if self.environment in ["air", "space", "moon", "mars"] and len(environmentObj.objects) > 0:
+            if self.environment in ["air", "space", "moon", "mars"] and not is_orbital and len(environmentObj.objects) > 0:
                 obj = environmentObj.objects[0]
                 orient = np.array(obj.orientationVector, dtype=float)
                 norm_orient = np.linalg.norm(orient)
@@ -434,6 +516,14 @@ class UIManager:
         debug_width = 410 if self.debugReadoutsShown else 0
         self.readoutPos = (windowWidth - self.readoutWidth, 0)
         self.digitWidth = (self.readoutWidth - 60) // 4
+        if self.orbitalReadoutsShown:
+            self.digitHeight = 12
+            self.digitFont = pygame.font.SysFont("courier", 24, bold=True)
+            self.labelFont = pygame.font.SysFont("ocraextended", 24, bold=False)
+        else:
+            self.digitHeight = 20
+            self.digitFont = pygame.font.SysFont("courier", 16, bold=True)
+            self.labelFont = pygame.font.SysFont("ocraextended", 40, bold=False)
         self.uiPanelRect = pygame.Rect(450, 50, 300, 400)
         self.uiElements = self._createUIElements()
         self.stars = []
@@ -474,6 +564,12 @@ class UIManager:
         else:
             self.debugSurface = None
         self._updateDimensions(self.windowWidth, self.windowHeight)
+        
+    def toggleOrbitalReadouts(self):
+        self.orbitalReadoutsShown = not self.orbitalReadoutsShown
+        self._updateDimensions(self.windowWidth, self.windowHeight)
+        self.digitWheels = [self._createDigitWheel() for _ in range(3)]
+        self.signWheel = self._createSignWheel()
 
     def handleClick(self, pos):
         x, y = pos
@@ -609,7 +705,7 @@ class UIManager:
         obj_id = id(obj)
         if obj_id not in self.debugHistory:
             self.debugHistory[obj_id] = {
-                'position': [], 'position_z': [], 'velocity': [], 'acceleration': [], 'airspeed_body': [],
+                'position': [], 'position_x': [], 'position_z': [], 'velocity': [], 'acceleration': [], 'airspeed_body': [],
                 'orientation': [], 'rotAngle': [], 'aoa': [], 'throttle': [], 'thrust': [],
                 'force': [], 'lift': [], 'drag': [], 'addedMass': []
             }
@@ -618,6 +714,7 @@ class UIManager:
 
         pos = tuple(obj.positionVector)
         history['position'].append(pos)
+        history['position_x'].append(pos[0])
         history['position_z'].append(pos[1])
         vel = tuple(obj.velocityVector)
         history['velocity'].append(vel)
@@ -768,6 +865,7 @@ class UIManager:
         y = 10
         y = render_value("Orientation", f"({orient[0]:.2f}, {orient[1]:.2f})", y)
         y = render_value("Position", f"({pos[0]:.2f}, {pos[1]:.2f})", y)
+        y = render_graph('position_x', y, False)
         y = render_graph('position_z', y, False)
         y = render_value("Velocity", f"({vel[0]:.2f}, {vel[1]:.2f})", y)
         y = render_graph('velocity', y, True)

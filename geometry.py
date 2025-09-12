@@ -18,17 +18,21 @@ CIRCLE_DRAG_COEFFICIENT = 0.05 * DRAG_MULTIPLIER
 APPLY_PARAMETERIZED_DRAG = True
 
 class Geometry:
-    def __init__(self, pointXCoords, pointZCoords, colocationXCoords, colocationZCoords, hasTrailingEdge=True):
+    def __init__(self, pointXCoords, pointZCoords, colocationXCoords, colocationZCoords, hasTrailingEdge=True, rho=1):
         self.pointXCoords = np.array(pointXCoords)
         self.pointZCoords = np.array(pointZCoords)
         self.colocationXCoords = np.array(colocationXCoords)
         self.colocationZCoords = np.array(colocationZCoords)
         self.numPoints = len(self.pointXCoords)
+        self.rho = rho
         self.hasTrailingEdge = hasTrailingEdge
         self.generateNormals()
         self.generateReferenceElementData()
         self.setDragCoefficient()
         self.setFrontalArea()
+        
+    def updateDensity(self, rho):
+        self.rho = rho
         
     def setDragCoefficient(self):
         if(self.hasTrailingEdge):
@@ -363,7 +367,7 @@ class Geometry:
             for gaussPointIndex in range(NUM_REFERENCE_ELEMENT_POINTS):
                 tangentialVelAtGaussPoint = sum(self.shapeFunctions[:, gaussPointIndex] * tangentialTotalVel[self.connectionMatrix[elementIndex]])
                 phiTAtGaussPoint = sum(self.shapeFunctions[:, gaussPointIndex] * phiT[self.connectionMatrix[elementIndex]])
-                dynamicPressure = 0.5*RHO*(U_mag_squared - tangentialVelAtGaussPoint**2) + RHO*phiTAtGaussPoint
+                dynamicPressure = 0.5*self.rho*(U_mag_squared - tangentialVelAtGaussPoint**2) + self.rho*phiTAtGaussPoint
                 dynamicPressures.append(dynamicPressure)
                 forceZ = forceZ - dynamicPressure * self.gaussCosines[elementIndex, gaussPointIndex] * self.gaussWeights[elementIndex, gaussPointIndex]
                 forceX = forceX - dynamicPressure * self.gaussSines[elementIndex, gaussPointIndex] * self.gaussWeights[elementIndex, gaussPointIndex]
@@ -422,7 +426,7 @@ class Geometry:
         localForceVector = self.computeForce(localVelocityVector, phi, phiT, tangentialTotalVel)
         
 #         Drag nedes area. Calculate frontalArea and multiply against itself 
-        dragMagnitude = self.dragCoefficient * 0.5 * RHO * (localVelocityVector[0]**2 + localVelocityVector[1]**2) * self.frontalArea
+        dragMagnitude = self.dragCoefficient * 0.5 * self.rho * (localVelocityVector[0]**2 + localVelocityVector[1]**2) * self.frontalArea
         if(APPLY_PARAMETERIZED_DRAG):
             localForceVector[0] = localForceVector[0] - dragMagnitude
 
@@ -564,7 +568,7 @@ class Circle:
 
 
 class Foil:
-    def __init__(self, foilType=None, chordLength=0.203, numPoints=300, points=None, mass=300):
+    def __init__(self, foilType=None, chordLength=0.203, numPoints=300, points=None, mass=300, rho=1):
         self.foilType = foilType
         self.chordLength = chordLength
         self.numPoints = numPoints + 1  # Account for double-counted trailing edge
@@ -584,10 +588,11 @@ class Foil:
         pointZCoords = np.concatenate((nacaNoseToTipZCoords, -nacaNoseToTipZCoords[-1:0:-1]))
         colocationXCoords, colocationZCoords = self.computeColocationPoints(
             nacaNoseToTipXCoords, nacaNoseToTipZCoords)
-        self.geometry = Geometry(pointXCoords, pointZCoords, colocationXCoords, colocationZCoords)
+        self.geometry = Geometry(pointXCoords, pointZCoords, colocationXCoords, colocationZCoords, rho=rho)
         self.generateElementMatrices()
         self.hasTrailingEdge = True  # Explicitly set for zooming logic
 
+        
     def generateNacaPoints(self, xCoords):
         if self.foilType == NACA_0012_FOIL_TYPE:
             C0 = 0.594689181

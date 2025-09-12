@@ -85,6 +85,8 @@ class Hydrofoiler:
                         self.uiManager.toggleHiddenUI()
                     if event.key == pygame.K_z:
                         self.uiManager.toggleDebugReadouts()
+                    if event.key == pygame.K_o:
+                        self.uiManager.toggleOrbitalReadouts()
                     elif event.key == pygame.K_ESCAPE:
                         self.state = "menu"
                         if self.state == "tunnel":
