@@ -8,7 +8,7 @@ class MainMenu:
         self.font = pygame.font.SysFont("arial", 40, bold=True)
         self.buttonFont = pygame.font.SysFont("arial", 30)
         self.smallFont = pygame.font.SysFont("arial", 20)
-        self.title = self.font.render("Kerbal Space Program (On Steroids)", True, (0, 0, 0))
+        self.title = self.font.render("Kerbal Space Program 2D", True, (0, 0, 0))
         self.buttons = [
             {"text": "The Shop", "action": "shop", "rect": None},
             {"text": "Tunnel", "action": "tunnel", "rect": None},

@@ -22,6 +22,9 @@ MOON_GRAV_AVG = 1.625
 
 VON_KARMAN_LINE = 100 * 1000
 
+MOON_DENSITY = 1 * 10**(-15)
+MARS_DENSITY = 0.020
+
 delta_t = datetime.timedelta(microseconds=10000)
 hstep = datetime.timedelta(seconds=10)
 hstep_total_seconds = hstep.total_seconds()

@@ -16,7 +16,7 @@ class Renderer:
         self.windowWidth = windowWidth
         self.windowHeight = windowHeight
         self.screen = pygame.display.set_mode((windowWidth, windowHeight), pygame.RESIZABLE)
-        pygame.display.set_caption("KSP(OS)")
+        pygame.display.set_caption("KSP2D")
         self.bgColor = (255, 255, 255)
         self.pointColor = (0, 0, 255)
         self.lineColor = (0, 0, 255)
@@ -415,7 +415,7 @@ class Renderer:
                 screenPos = self._toScreenCoords(runwayObject["pos"][0], runwayObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
                 pygame.draw.rect(surface, self.runwayColor, pygame.Rect(screenPos[0], screenPos[1], environmentObj.RUNWAY_SEGMENT_WIDTH * self.scaleX, environmentObj.RUNWAY_SEGMENT_HEIGHT * self.scaleX), 2)
 
-        if self.environment == "space":
+        if self.environment in ["moon", "mars"]:
             for launchpadObject in environmentObj.launchpadObjects:
                 screenPos = self._toScreenCoords(launchpadObject["pos"][0], launchpadObject["pos"][1], isGlobalView=True, subDomainCenter=subDomainCenter)
                 pygame.draw.rect(surface, self.runwayColor, pygame.Rect(screenPos[0], screenPos[1], environmentObj.LAUNCHPAD_SEGMENT_WIDTH * self.scaleX, environmentObj.LAUNCHPAD_SEGMENT_HEIGHT * self.scaleX), 2)

@@ -52,16 +52,16 @@ class UIManager:
             "rotationMax": 360,
         }
         self.moonParams = {
-            "deltaX": 1000.0,
-            "deltaZ": 10000.0,
+            "deltaX": 10000.0,
+            "deltaZ": 50.0,
             "enginePower": 5000,
             "deltaRotation": 0.1,
             "rotationMin": -360,
             "rotationMax": 360,
         }
         self.marsParams = {
-            "deltaX": 1000.0,
-            "deltaZ": 10000.0,
+            "deltaX": 10000.0,
+            "deltaZ": 100.0,
             "enginePower": 5000,
             "deltaRotation": 0.1,
             "rotationMin": -360,
@@ -514,7 +514,8 @@ class UIManager:
         debug_width = 410 if self.debugReadoutsShown else 0
         self.readoutPos = (windowWidth - self.readoutWidth, 0)
         self.digitWidth = (self.readoutWidth - 60) // 4
-        if self.orbitalReadoutsShown:
+        # Set consistent digit height and font for air, ocean, pilot, tunnel, moon, mars, and non-orbital space
+        if self.environment == "space" and self.orbitalReadoutsShown:
             self.digitHeight = 12
             self.digitFont = pygame.font.SysFont("courier", 24, bold=True)
             self.labelFont = pygame.font.SysFont("ocraextended", 24, bold=False)
@@ -525,6 +526,9 @@ class UIManager:
         self.uiPanelRect = pygame.Rect(450, 50, 300, 400)
         self.uiElements = self._createUIElements()
         self.stars = []
+        # Regenerate digit wheels to match new dimensions
+        self.digitWheels = [self._createDigitWheel() for _ in range(3)]
+        self.signWheel = self._createSignWheel()
 
     def resize(self, size):
         self._updateDimensions(*size)

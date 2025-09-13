@@ -6,9 +6,12 @@ import imageio
 import copy
 from geometry import Geometry, Circle, Foil
 
+import Constants as const
+
+
 MAX_FRAMES = 10000
 PLOT_FRAMES = False
-GRAVITY = 9.81
+GRAVITY = 3.728
 GRAVITY_VECTOR = np.array([0, -GRAVITY])
 DELTA_T = 0.01
 MAX_VELOCITY = 1000000
@@ -45,9 +48,9 @@ class Mars:
         self.pathHistory = []  # For minimap
         self.running = True
         self.maxHistoryLength = 1000  # Cap history lengths
-        self.deltaX = 1000
+        self.deltaX = 10000
 #         self.deltaZ = -MINIMUM_Z_COORDINATE * 2
-        self.deltaZ = 10000
+        self.deltaZ = 100
         self.terrainObjects = []
         self.launchpadObjects = []
         self.spawnTerrainObjects()
@@ -55,8 +58,8 @@ class Mars:
     
 
     def addObject(self, geometryData):
-        object = Object(geometryData, 0, 0)
-        object.pointUp()
+        object = Object(geometryData, 0, self.deltaZ)
+        object.pointLowerRight()
         self.objects.append(object)
         return object
         
@@ -352,6 +355,9 @@ class Object:
     def pointRight(self):
         self.orientationVector = np.array([1.0, 0.0], dtype=np.float64)
         
+    def pointLowerRight(self):
+        self.orientationVector = np.array([0.5, -0.5], dtype=np.float64)
+        
     def pointUp(self):
         self.orientationVector = np.array([0.0, 1.0], dtype=np.float64)
 
@@ -362,6 +368,8 @@ class Object:
         self.velocityVector = np.clip(self.velocityVector, -MAX_VELOCITY, MAX_VELOCITY)
 
     def updatePosition(self):
+        rho = const.MARS_DENSITY
+        self.geometry.updateDensity(rho)
         self.updateForce(self.velocityVector, self.accelerationVector)
 #         print("self.forceVector", self.forceVector)
 #         modifiedForceVector = [self.forceVector[0], self.forceVector[1] * -1]
